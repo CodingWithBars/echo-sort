@@ -25,7 +25,7 @@ export default function LoginPage() {
     } 
     else if (email === "driver1@eco.com" && password === "driver123") {
       setSession("DRIVER");
-      router.push("/driver/map");
+      router.push("/driver/dashboard");
     } 
     else if (email === "citizen@eco.com" && password === "citizen123") {
       setSession("CITIZEN");
