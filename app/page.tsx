@@ -1,52 +1,135 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 
 export default function Home() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-emerald-50 px-6 font-sans">
-      <main className="flex w-full max-w-md flex-col items-center text-center">
-        {/* EcoRoute Logo/Icon Placeholder */}
-        <div className="mb-8 flex h-24 w-24 items-center justify-center rounded-3xl bg-emerald-600 shadow-lg shadow-emerald-200">
-          <svg
-            className="h-12 w-12 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M9 20l-5.447-2.724A2 2 0 013 15.487V6a2 2 0 011.106-1.789l6.553-3.277a2 2 0 011.688 0l6.553 3.277A2 2 0 0120 6v9.487a2 2 0 01-1.106 1.789L13.447 20a2 2 0 01-1.894 0L9 20z"
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 3500); // Slightly longer to enjoy the animation
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (showSplash) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-emerald-600 overflow-hidden">
+        {/* Main Logo Container */}
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="mb-8 flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] overflow-hidden">
+            <img
+              src="/icons/icon-512x512.png"
+              alt="EcoRoute Logo"
+              className="h-full w-full object-cover p-5"
             />
-          </svg>
+          </div>
+
+          <h1 className="text-4xl font-black tracking-tighter text-white italic">
+            ECO<span className="opacity-70">ROUTE</span>
+          </h1>
         </div>
 
-        <h1 className="text-4xl font-bold tracking-tight text-emerald-900">
+        {/* --- ROAD & TRUCK ANIMATION --- */}
+        <div className="relative mt-12 w-64 h-16">
+          {/* The Road (Dashed Line) */}
+          <div className="absolute top-1/2 left-0 w-full h-1 border-b-2 border-dashed border-emerald-400/50 -translate-y-1/2" />
+
+          {/* Static Bins along the road */}
+          <div className="absolute top-1/2 left-4 -translate-y-[150%] text-xs opacity-60">
+            🗑️
+          </div>
+          <div className="absolute top-1/2 left-1/2 -translate-y-[-50%] text-xs opacity-60">
+            🗑️
+          </div>
+          <div className="absolute top-1/2 right-4 -translate-y-[150%] text-xs opacity-60">
+            🗑️
+          </div>
+
+          {/* The Moving Truck Container */}
+          <div className="absolute top-1/2 left-0 -translate-y-1/2 animate-truck-move">
+            <div className="flex flex-col items-center">
+              {/* Flip the truck icon so it faces right */}
+              <span className="text-3xl mb-1 drop-shadow-md scale-x-[-1]">
+                🚛
+              </span>
+
+              {/* Exhaust puffs - repositioned to stay behind the truck */}
+              <div className="flex gap-1 mr-6">
+                <div className="h-1 w-1 bg-emerald-200 rounded-full animate-ping" />
+                <div className="h-1 w-1 bg-emerald-200 rounded-full animate-ping delay-75" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-8 text-emerald-200 font-black text-[10px] uppercase tracking-[0.4em] animate-pulse">
+          Optimizing Collection...
+        </p>
+
+        <style jsx>{`
+          @keyframes truckMove {
+            0% {
+              transform: translate(-40px, -50%);
+              opacity: 0;
+            }
+            10% {
+              opacity: 1;
+            }
+            90% {
+              opacity: 1;
+            }
+            100% {
+              transform: translate(260px, -50%);
+              opacity: 0;
+            }
+          }
+          .animate-truck-move {
+            animation: truckMove 3.5s linear infinite;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // --- MAIN HOME PAGE VIEW ---
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-emerald-50 px-6 font-sans animate-in fade-in slide-in-from-bottom-4 duration-1000">
+      <main className="flex w-full max-w-md flex-col items-center text-center">
+        <div className="mb-8 flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white shadow-xl shadow-emerald-100 border border-emerald-50 overflow-hidden">
+          <img
+            src="/icons/icon-512x512.png"
+            alt="EcoRoute Logo"
+            className="h-full w-full object-cover p-4"
+          />
+        </div>
+
+        <h1 className="text-4xl font-black tracking-tight text-emerald-900">
           EcoRoute
         </h1>
-        <p className="mt-4 text-lg leading-7 text-emerald-700">
-          Smart Waste Management for a <br />
-          <span className="font-semibold text-emerald-600">Cleaner Barangay</span>
+        <p className="mt-4 text-lg leading-7 text-emerald-700 font-medium">
+          Smart Waste Management for <br />
+          <span className="font-black text-emerald-600 uppercase text-sm tracking-widest">
+            Efficient Collection
+          </span>
         </p>
 
         <div className="mt-10 flex w-full flex-col gap-4">
           <Link
             href="/login"
-            className="flex h-14 w-full items-center justify-center rounded-2xl bg-emerald-600 text-lg font-bold text-white transition-all hover:bg-emerald-700 active:scale-95 shadow-md"
+            className="flex h-16 w-full items-center justify-center rounded-2xl bg-emerald-600 text-lg font-black uppercase tracking-widest text-white transition-all hover:bg-emerald-700 active:scale-95 shadow-lg shadow-emerald-200"
           >
             Sign In
           </Link>
-          
+
           <Link
             href="/register"
-            className="flex h-14 w-full items-center justify-center rounded-2xl border-2 border-emerald-200 bg-white text-lg font-bold text-emerald-700 transition-all hover:bg-emerald-50 active:scale-95"
+            className="flex h-16 w-full items-center justify-center rounded-2xl border-2 border-emerald-200 bg-white text-lg font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-50 active:scale-95"
           >
-            Register as Citizen
+            Register
           </Link>
         </div>
 
-        <p className="mt-8 text-sm text-emerald-600/60">
+        <p className="mt-12 text-[10px] font-black uppercase tracking-[0.3em] text-emerald-600/40">
           Efficiency • Sustainability • Community
         </p>
       </main>
