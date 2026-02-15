@@ -17,31 +17,48 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
 
     const updateRoute = async () => {
       // 1. Cleanup previous routes
-      if (routingControlRef.current) map.removeControl(routingControlRef.current);
-      if (fallbackLayerRef.current) map.removeLayer(fallbackLayerRef.current);
+      if (routingControlRef.current) {
+        map.removeControl(routingControlRef.current);
+        routingControlRef.current = null;
+      }
+      if (fallbackLayerRef.current) {
+        map.removeLayer(fallbackLayerRef.current);
+        fallbackLayerRef.current = null;
+      }
 
+      // 2. Filter targets
       let targets = bins.filter((b: any) => b.fillLevel > 50);
-      if (targets.length === 0) return;
+      if (targets.length === 0) {
+        onRouteUpdate?.({ distance: 0, time: 0 });
+        return;
+      }
 
-      // 2. Balanced Efficiency Logic (Score = Distance / FillLevel)
+      // 3. One-Way Efficiency Logic
+      // Start with the driver's current position
       const sequence: L.LatLng[] = [L.latLng(driverPos[0], driverPos[1])];
       let currentPos = { lat: driverPos[0], lng: driverPos[1] };
       let remainingBins = [...targets];
 
+      // Greedily find the next "most efficient" bin and add it to the path
       while (remainingBins.length > 0) {
         remainingBins.sort((a, b) => {
           const distA = getDistance([currentPos.lat, currentPos.lng], [a.lat, a.lng]);
           const distB = getDistance([currentPos.lat, currentPos.lng], [b.lat, b.lng]);
+          
           const scoreA = distA / (a.fillLevel / 100);
           const scoreB = distB / (b.fillLevel / 100);
           return scoreA - scoreB;
         });
+
         const next = remainingBins.shift()!;
         sequence.push(L.latLng(next.lat, next.lng));
+        
+        // Update current position to the bin we just "visited"
+        // This ensures the next calculation starts from this bin, not the driver's start point
         currentPos = { lat: next.lat, lng: next.lng };
       }
 
-      // 3. ROAD-SNAP EXECUTION (Requires valid token)
+      // 4. ROAD-SNAP EXECUTION
       if (navigator.onLine && token) {
         try {
           // @ts-ignore
@@ -49,12 +66,15 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
           const LeafletAny = L as any;
 
           routingControlRef.current = LeafletAny.Routing.control({
+            // Explicitly map the sequence as strictly ordered waypoints
             waypoints: sequence.map(latlng => LeafletAny.Routing.waypoint(latlng)),
             router: LeafletAny.Routing.mapbox(token, {
               profile: 'mapbox/driving',
               options: {
-                overview: 'full',      // Forces high-detail road geometry
-                geometries: 'polyline6'
+                overview: 'full',      
+                geometries: 'polyline6',
+                // This prevents the router from thinking it needs to return to the start
+                continue_straight: true 
               }
             }),
             lineOptions: {
@@ -66,10 +86,10 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
                 lineJoin: 'round'
               }],
               extendToWaypoints: true,
-              missingRouteTolerance: 100 // Snaps bin locations to the nearest road
+              missingRouteTolerance: 100 
             },
             show: false,
-            addWaypoints: false,
+            addWaypoints: false, // Prevents users from clicking and adding points
             createMarker: () => null
           })
           .on('routesfound', (e: any) => {
@@ -77,7 +97,7 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
             onRouteUpdate?.({ distance: summary.totalDistance, time: summary.totalTime });
           })
           .on('routingerror', (err: any) => {
-            console.error("Mapbox Route Failed (Check Token):", err);
+            console.error("Mapbox Route Failed:", err);
             drawOfflinePath(sequence);
           })
           .addTo(map);
@@ -91,7 +111,6 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
     };
 
     const drawOfflinePath = (points: L.LatLng[]) => {
-      // This only shows if Mapbox fails
       fallbackLayerRef.current = L.polyline(points as any, {
         color: '#10b981',
         weight: 6,
@@ -101,8 +120,6 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
       onRouteUpdate?.({ distance: 0, time: 0 }); 
     };
 
-
-    
     updateRoute();
     return () => {
       if (routingControlRef.current) map.removeControl(routingControlRef.current);
