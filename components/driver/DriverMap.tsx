@@ -26,6 +26,8 @@ const INITIAL_BINS: Bin[] = [
   { id: 3, name: "Bin 2", lat: 6.89003, lng: 126.02393, fillLevel: 78 },
   { id: 4, name: "Bin 1", lat: 6.89068, lng: 126.0235, fillLevel: 15 },
   { id: 5, name: "Bin 11", lat: 6.89066, lng: 126.02434, fillLevel: 82 },
+  { id: 5, name: "Bin 19", lat: 6.891392748599929, lng: 126.00532732142247, fillLevel: 63 },
+  { id: 5, name: "Bin 20", lat: 6.890182185108943, lng: 126.00630546152834, fillLevel: 46 },
 ];
 
 export default function DriverMap() {
