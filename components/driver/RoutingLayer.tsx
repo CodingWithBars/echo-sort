@@ -101,6 +101,8 @@ export default function RoutingLayer({ driverPos, bins, routeKey, onRouteUpdate 
       onRouteUpdate?.({ distance: 0, time: 0 }); 
     };
 
+
+    
     updateRoute();
     return () => {
       if (routingControlRef.current) map.removeControl(routingControlRef.current);
