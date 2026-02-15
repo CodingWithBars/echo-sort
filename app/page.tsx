@@ -125,7 +125,7 @@ export default function Home() {
             href="/register"
             className="flex h-16 w-full items-center justify-center rounded-2xl border-2 border-emerald-200 bg-white text-lg font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-50 active:scale-95"
           >
-            Register
+            Register as a Citizen
           </Link>
         </div>
 

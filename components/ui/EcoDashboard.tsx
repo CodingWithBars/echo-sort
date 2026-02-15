@@ -19,16 +19,16 @@ export default function EcoDashboard({
        MOBILE: rounded-t-[2.5rem], p-5, fixed bottom
     */
     <div className="bg-white/95 backdrop-blur-md shadow-[0_-15px_40px_rgba(0,0,0,0.08)] z-[1000] border-t md:border-t-0 md:border-l border-white h-full
-                    rounded-t-[2.5rem] md:rounded-none p-5 md:p-8">
+                    md:rounded-none p-5 md:p-8">
       
       {/* Container adapts width: max-md on mobile, full width on web sidebar */}
-      <div className="max-w-md mx-auto md:max-w-none md:flex md:flex-col md:h-full md:justify-between">
+      <div className="max-w-md mx-au to md:max-w-none md:flex md:flex-col md:h-full md:justify-between">
         
         <div>
           {/* HEADER SECTION (Web only) */}
           <div className="hidden md:block mb-8">
             <h1 className="text-2xl font-black text-slate-800 tracking-tighter italic">ECO<span className="text-emerald-500">ROUTE</span></h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fleet Management v3.0</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Route Management v1.0</p>
           </div>
 
           {/* MODE TOGGLE - Stays centered on mobile, moves left on web */}
