@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 
 interface CollectionLog {
   id: number;
@@ -19,12 +19,17 @@ interface DashboardProps {
   eta: { dist: string; time: string };
   targetCount: number;
   driverPos: any;
+  // State management props
+  isTracking: boolean; 
   onStartTracking: () => void;
+  onStopTracking: () => void; 
   onRefresh: () => void;
   history?: CollectionLog[];
   onClearHistory?: () => void;
   mapStyle: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12";
-  setMapStyle: (s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12") => void;
+  setMapStyle: (
+    s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12",
+  ) => void;
 }
 
 export default function EcoDashboard({
@@ -38,23 +43,33 @@ export default function EcoDashboard({
   eta,
   targetCount,
   driverPos,
+  isTracking,
   onStartTracking,
+  onStopTracking,
   onRefresh,
   history = [],
   onClearHistory,
   mapStyle,
   setMapStyle,
 }: DashboardProps) {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const styles: { id: typeof mapStyle; label: string; icon: string }[] = [
     { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
     { id: "navigation-night-v1", label: "Night", icon: "🌙" },
     { id: "outdoors-v12", label: "Terrain", icon: "🏔️" },
   ];
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await onRefresh();
+    // Brief timeout to ensure the animation is visible to the user
+    setTimeout(() => setIsRefreshing(false), 800);
+  };
+
   return (
     <div className="flex flex-col h-[85vh] md:h-screen bg-white">
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
-        
         {/* MAP STYLE PICKER */}
         <div className="mb-6">
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">
@@ -90,7 +105,9 @@ export default function EcoDashboard({
             <button
               onClick={() => setRoutingMode("fastest")}
               className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                routingMode === "fastest" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"
+                routingMode === "fastest"
+                  ? "bg-white text-emerald-600 shadow-sm"
+                  : "text-slate-400"
               }`}
             >
               🍃 Efficient
@@ -98,7 +115,9 @@ export default function EcoDashboard({
             <button
               onClick={() => setRoutingMode("priority")}
               className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                routingMode === "priority" ? "bg-white text-orange-500 shadow-sm" : "text-slate-400"
+                routingMode === "priority"
+                  ? "bg-white text-orange-500 shadow-sm"
+                  : "text-slate-400"
               }`}
             >
               ⚠️ Urgent
@@ -120,7 +139,9 @@ export default function EcoDashboard({
         {/* DETOUR SLIDER */}
         <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-[10px] font-black text-slate-500 uppercase">Detour Range</span>
+            <span className="text-[10px] font-black text-slate-500 uppercase">
+              Detour Range
+            </span>
             <span className="text-[10px] font-black text-emerald-600 bg-white px-2 py-0.5 rounded border">
               +{maxDetour}m
             </span>
@@ -141,18 +162,36 @@ export default function EcoDashboard({
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 gap-4 mb-6">
-          <StatCard label="Next Station" value={nextBin.name} sub={nextBin.distance} color="text-emerald-600" icon="📍" />
-          
-          <div className={`p-2 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
-            routingMode === "priority" ? "bg-orange-500 border-orange-400" : "bg-emerald-600 border-emerald-500"
-          }`}>
-            <span className="block text-[10px] font-black opacity-80 uppercase mb-1">Total Route distance</span>
+          <StatCard
+            label="Next Station"
+            value={nextBin.name}
+            sub={nextBin.distance}
+            color="text-emerald-600"
+            icon="📍"
+          />
+
+          <div
+            className={`p-6 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
+              routingMode === "priority"
+                ? "bg-orange-500 border-orange-400"
+                : "bg-emerald-600 border-emerald-500"
+            }`}
+          >
+            <span className="block text-[10px] font-black opacity-80 uppercase mb-1">
+              Total Route distance
+            </span>
             <span className="block text-3xl font-black">{eta.dist}</span>
             <hr className="opacity-20 my-2" />
             <span className="text-sm font-bold">⏱️ EST. {eta.time}</span>
           </div>
 
-          <StatCard label="Active Stops" value={targetCount.toString()} sub="Total Bins" color="text-slate-400" icon="🗑️" />
+          <StatCard
+            label="Active Stops"
+            value={targetCount.toString()}
+            sub="Total Bins"
+            color="text-slate-400"
+            icon="🗑️"
+          />
         </div>
 
         {/* RECENT COLLECTIONS LOG */}
@@ -171,14 +210,19 @@ export default function EcoDashboard({
             </div>
             <div className="space-y-2">
               {history.map((log, i) => (
-                <div key={`${log.id}-${i}`} className="flex items-center justify-between bg-white border border-slate-100 p-3 rounded-xl shadow-sm">
+                <div
+                  key={`${log.id}-${i}`}
+                  className="flex items-center justify-between bg-white border border-slate-100 p-3 rounded-xl shadow-sm"
+                >
                   <div className="flex items-center gap-3">
                     <span className="text-xs">✅</span>
                     <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight">
                       {log.name}
                     </span>
                   </div>
-                  <span className="text-[9px] font-bold text-slate-400">{log.time}</span>
+                  <span className="text-[9px] font-bold text-slate-400">
+                    {log.time}
+                  </span>
                 </div>
               ))}
             </div>
@@ -187,23 +231,30 @@ export default function EcoDashboard({
       </div>
 
       {/* Sticky Bottom Actions */}
-      <div className="p-5 pt-2 border-t border-slate-100 bg-white/80 backdrop-blur-sm pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-8">
-        <div className="flex flex-col gap-3">
+      <div className="p-5 pt-4 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-24">
+        <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
           <button
-            onClick={onStartTracking}
-            className={`w-full py-4 md:py-5 rounded-[1.8rem] font-black text-xs uppercase transition-all ${
-              driverPos
-                ? "bg-slate-100 text-slate-400 border border-slate-200"
-                : "bg-blue-600 text-white shadow-lg shadow-blue-100"
+            onClick={isTracking ? onStopTracking : onStartTracking}
+            className={`w-full py-4 md:py-5 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border ${
+              isTracking
+                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100 shadow-sm"
+                : "bg-blue-600 text-white shadow-lg shadow-blue-200 border-blue-500 hover:bg-blue-700"
             }`}
           >
-            {driverPos ? "📡 System Active" : "🚀 Launch Tracking"}
+            {isTracking ? "🛑 Stop Tracking" : "🚀 Launch Tracking"}
           </button>
+
           <button
-            onClick={onRefresh}
-            className="w-full py-3 md:py-4 rounded-[1.8rem] bg-emerald-50 text-emerald-600 border border-emerald-100 font-black text-[10px] uppercase flex justify-center items-center gap-2"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`w-full py-3 md:py-4 rounded-[1.8rem] font-black text-[10px] uppercase flex justify-center items-center gap-2 transition-all active:scale-95 ${
+              isRefreshing
+                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait"
+                : "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 shadow-sm"
+            }`}
           >
-            <span>🔄</span> Recalculate Path
+            <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+            {isRefreshing ? "Optimizing Path..." : "Recalculate Path"}
           </button>
         </div>
       </div>

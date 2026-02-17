@@ -73,6 +73,8 @@ export default function DriverMap() {
   const [mapStyle, setMapStyle] = useState<
     "navigation-night-v1" | "satellite-streets-v12" | "outdoors-v12"
   >("satellite-streets-v12");
+  const [isTracking, setIsTracking] = useState(false);
+  const [geoWatchId, setGeoWatchId] = useState<number | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -164,7 +166,8 @@ export default function DriverMap() {
 
   const startLiveTracking = () => {
     if (typeof window !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.watchPosition(
+      setIsTracking(true);
+      const id = navigator.geolocation.watchPosition(
         (pos) => {
           setDriverPos([pos.coords.latitude, pos.coords.longitude]);
           if (pos.coords.heading !== null) setHeading(pos.coords.heading);
@@ -172,7 +175,23 @@ export default function DriverMap() {
         (err) => console.error(err),
         { enableHighAccuracy: true },
       );
+      setGeoWatchId(id);
     }
+  };
+
+  const stopLiveTracking = () => {
+    if (geoWatchId !== null) {
+      navigator.geolocation.clearWatch(geoWatchId);
+      setGeoWatchId(null);
+    }
+    setIsTracking(false);
+    setDriverPos(null); // Optional: Clear driver marker when stopping
+  };
+
+  const handleRefresh = async () => {
+    setRouteKey((prev) => prev + 1);
+    // Add any logic to refetch bin data from your backend here
+    return new Promise((resolve) => setTimeout(resolve, 800)); // Sync with dashboard animation
   };
 
   if (!isMounted) return null;
@@ -312,21 +331,22 @@ export default function DriverMap() {
               setRoutingMode={setRoutingMode}
               maxDetour={maxDetour}
               setMaxDetour={setMaxDetour}
+              useFence={useFence}
+              setUseFence={setUseFence}
               nextBin={nextBinInfo}
               eta={eta}
               targetCount={bins.filter((b) => b.fillLevel >= 40).length}
               driverPos={driverPos}
+              // NEW PROPS
+              isTracking={isTracking}
               onStartTracking={startLiveTracking}
-              onRefresh={() => {
-                setRouteKey((k) => k + 1);
-                setSelectedBinId(null);
-              }}
-              useFence={useFence}
-              setUseFence={setUseFence}
+              onStopTracking={stopLiveTracking}
+              onRefresh={handleRefresh}
+              // LOGS & STYLES
               history={history}
               onClearHistory={() => setHistory([])}
               mapStyle={mapStyle}
-  setMapStyle={setMapStyle}
+              setMapStyle={setMapStyle}
             />
           </div>
         </div>
