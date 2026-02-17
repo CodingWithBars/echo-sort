@@ -65,61 +65,42 @@ export default function RoutingLayer(props: RoutingLayerProps) {
 
     if (!nearbyBins.length) return clearPath();
 
-    // --- 2. CLUSTER BINS ---
+    // --- 2. CLUSTER ---
     nearbyBins = clusterBins(nearbyBins, clusterRadius);
 
-    // --- 3. TIERING ---
-    let urgent = nearbyBins.filter(
-      (b) => b.fillLevel >= 70 || b.id === selectedBinId,
-    );
-    let optional = nearbyBins.filter(
-      (b) =>
-        b.fillLevel >= 40 &&
-        b.fillLevel < 70 &&
-        b.id !== selectedBinId &&
-        b.fillLevel > 0,
-    );
+    // --- 3. REMOVE EMPTY ---
+    nearbyBins = nearbyBins.filter((b) => b.fillLevel > 0);
 
-    if (!urgent.length && !optional.length) {
+    if (!nearbyBins.length) {
       clearPath();
       onRouteUpdate({ distance: 0, time: 0 });
       return;
     }
 
-    if (!urgent.length) urgent = [...optional];
-
     // =========================================================
-    // 🔥 4. BUILD ROUTE ORDER WITH LOOK-AHEAD
+    // 🧠 HUMAN-THINKING ROUTE BUILDER
     // =========================================================
 
     let currentPos = driverPos;
     const route: [number, number][] = [driverPos];
-    const visited = new Set<number>();
+    const remaining = [...nearbyBins];
 
-    while (urgent.length > 0) {
+    while (remaining.length > 0) {
 
-      // ⭐ LOOK-AHEAD SELECTION
       let bestIdx = 0;
       let bestScore = Infinity;
 
-      for (let i = 0; i < urgent.length; i++) {
-        const candidate = urgent[i];
+      for (let i = 0; i < remaining.length; i++) {
+        const candidate = remaining[i];
+        const candidatePos: [number, number] = [candidate.lat, candidate.lng];
 
-        const candidatePos: [number, number] = [
-          candidate.lat,
-          candidate.lng,
-        ];
-
-        // simulate going to this bin first
-        const simulatedStops: [number, number][] = [
+        const score = humanScore(
           currentPos,
           candidatePos,
-          ...urgent
-            .filter((_, j) => j !== i)
-            .map((b) => [b.lat, b.lng] as [number, number]),
-        ];
-
-        const score = approximateRouteCost(simulatedStops);
+          candidate.fillLevel,
+          remaining,
+          i
+        );
 
         if (score < bestScore) {
           bestScore = score;
@@ -127,47 +108,16 @@ export default function RoutingLayer(props: RoutingLayerProps) {
         }
       }
 
-      const target = urgent.splice(bestIdx, 1)[0];
-      const targetPos: [number, number] = [target.lat, target.lng];
+      const chosen = remaining.splice(bestIdx, 1)[0];
+      const chosenPos: [number, number] = [chosen.lat, chosen.lng];
 
-      // --- OPTIONAL INSERTION (UNCHANGED LOGIC) ---
-      const candidates = optional.filter((o) => !visited.has(o.id));
-      const valid: any[] = [];
-
-      const baseDist = getDistance(currentPos, targetPos);
-
-      candidates.forEach((opt) => {
-        const d1 = getDistance(currentPos, [opt.lat, opt.lng]);
-        const d2 = getDistance([opt.lat, opt.lng], targetPos);
-        const deviation = d1 + d2 - baseDist;
-        if (deviation <= maxDetour) valid.push(opt);
-      });
-
-      valid.sort(
-        (a, b) =>
-          getDistance(currentPos, [a.lat, a.lng]) -
-          getDistance(currentPos, [b.lat, b.lng]),
-      );
-
-      valid.forEach((v) => {
-        route.push([v.lat, v.lng]);
-        visited.add(v.id);
-        optional = optional.filter((o) => o.id !== v.id);
-        currentPos = [v.lat, v.lng];
-      });
-
-      route.push(targetPos);
-      visited.add(target.id);
-      currentPos = targetPos;
+      route.push(chosenPos);
+      currentPos = chosenPos;
     }
 
-    // --- 5. RETURN TO DUMP SITE ---
     if (dumpSite) route.push(dumpSite);
 
-    // --- 6. SNAP DRIVER TO ROAD ---
-    const finalRoute = snapToRoad ? snapFirstPoint(route) : route;
-
-    // --- 7. MAPBOX LIMIT ---
+    const finalRoute = snapToRoad ? route : route;
     const safeRoute = finalRoute.slice(0, 25);
 
     fetchRoute(safeRoute);
@@ -175,7 +125,7 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     return () => abortRef.current?.abort();
 
     // =========================================================
-    // ROUTE FETCH (UNCHANGED)
+    // ROUTE FETCH
     async function fetchRoute(points: [number, number][]) {
       const coords = points.map((p) => `${p[1]},${p[0]}`).join(";");
 
@@ -220,14 +170,80 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     }
 
     // =========================================================
-    // HELPERS (YOURS + 1 NEW)
+    // 🧠 HUMAN SCORING ENGINE
+
+    function humanScore(
+      from: [number, number],
+      candidate: [number, number],
+      fill: number,
+      all: any[],
+      index: number
+    ) {
+      const distance = getDistance(from, candidate);
+
+      // ---------- 1. FILL PRIORITY ----------
+      const fillReward = fill * 3;
+
+      // ---------- 2. CLUSTER REWARD ----------
+      let cluster = 0;
+      for (let j = 0; j < all.length; j++) {
+        if (j === index) continue;
+        const d = getDistance(candidate, [all[j].lat, all[j].lng]);
+        if (d < 120) cluster++;
+      }
+      const clusterReward = cluster * 180;
+
+      // ---------- 3. BACKTRACK RISK ----------
+      let centroidLat = 0;
+      let centroidLng = 0;
+      all.forEach((b) => {
+        centroidLat += b.lat;
+        centroidLng += b.lng;
+      });
+      centroidLat /= all.length;
+      centroidLng /= all.length;
+
+      const centroidDist = getDistance(candidate, [centroidLat, centroidLng]);
+      const backtrackPenalty = centroidDist * 0.4;
+
+      // ---------- 4. FORWARD DIRECTION ----------
+      let directionPenalty = 0;
+      if (route.length >= 2) {
+        const prev = route[route.length - 1];
+        const prevPrev = route[route.length - 2];
+
+        const v1 = [prev[0] - prevPrev[0], prev[1] - prevPrev[1]];
+        const v2 = [candidate[0] - prev[0], candidate[1] - prev[1]];
+
+        const dot = v1[0]*v2[0] + v1[1]*v2[1];
+        const mag1 = Math.sqrt(v1[0]*v1[0] + v1[1]*v1[1]);
+        const mag2 = Math.sqrt(v2[0]*v2[0] + v2[1]*v2[1]);
+
+        if (mag1 && mag2) {
+          const angle = Math.acos(dot/(mag1*mag2)) * 180 / Math.PI;
+          directionPenalty = angle * 25; // punish sharp turns
+        }
+      }
+
+      // ---------- FINAL HUMAN SCORE ----------
+      return (
+        distance * 1.0
+        + backtrackPenalty
+        + directionPenalty
+        - clusterReward
+        - fillReward
+      );
+    }
+
+    // =========================================================
+    // HELPERS
 
     function clusterBins(list: any[], radius: number) {
       const clustered: any[] = [];
 
       list.forEach((bin) => {
         const existing = clustered.find(
-          (c) => getDistance([c.lat, c.lng], [bin.lat, bin.lng]) <= radius,
+          (c) => getDistance([c.lat, c.lng], [bin.lat, bin.lng]) <= radius
         );
 
         if (existing) {
@@ -242,18 +258,6 @@ export default function RoutingLayer(props: RoutingLayerProps) {
       return clustered;
     }
 
-    function snapFirstPoint(points: [number, number][]) {
-      return points;
-    }
-
-    // ⭐ NEW — FAST APPROX LOOK-AHEAD COST
-    function approximateRouteCost(points: [number, number][]) {
-      let total = 0;
-      for (let i = 0; i < points.length - 1; i++) {
-        total += getDistance(points[i], points[i + 1]);
-      }
-      return total;
-    }
   }, [
     map,
     driverPos,
