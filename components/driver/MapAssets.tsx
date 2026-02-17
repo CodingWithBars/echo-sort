@@ -23,7 +23,6 @@ export const getDistance = (p1: [number, number], p2: [number, number]) => {
 };
 
 
-
 /**
  * EcoRoute Styled Bin Icons
  * Follows the emerald color scheme and bold typography constraints.

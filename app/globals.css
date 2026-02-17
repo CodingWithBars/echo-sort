@@ -30,6 +30,12 @@
   scrollbar-width: none;
 }
 
+.leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  z-index: 1;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import RoutingLayer from "./RoutingLayer";
 import BinMarker from "./BinMarker";
@@ -18,6 +18,12 @@ interface Bin {
   fillLevel: number;
 }
 
+interface CollectionLog {
+  id: number;
+  name: string;
+  time: string;
+}
+
 const INITIAL_BINS: Bin[] = [
   { id: 1, name: "Bin 4", lat: 6.89095, lng: 126.02411, fillLevel: 94 },
   { id: 2, name: "Bin 5", lat: 6.88955, lng: 126.02508, fillLevel: 88 },
@@ -28,8 +34,22 @@ const INITIAL_BINS: Bin[] = [
   { id: 7, name: "Bin 20", lat: 6.89018, lng: 126.0063, fillLevel: 46 },
 ];
 
+function MapClickHandler({
+  onMapDoubleClick,
+}: {
+  onMapDoubleClick: (latlng: L.LatLng) => void;
+}) {
+  useMapEvents({
+    dblclick(e) {
+      onMapDoubleClick(e.latlng);
+    },
+  });
+  return null;
+}
+
 export default function DriverMap() {
   const [bins, setBins] = useState<Bin[]>(INITIAL_BINS);
+  const [history, setHistory] = useState<CollectionLog[]>([]);
   const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
   const [heading, setHeading] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -37,7 +57,7 @@ export default function DriverMap() {
   const [routingMode, setRoutingMode] = useState<"fastest" | "priority">(
     "fastest",
   );
-  const [maxDetour, setMaxDetour] = useState(300); // New slider state
+  const [maxDetour, setMaxDetour] = useState(300);
   const [routeKey, setRouteKey] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
@@ -49,34 +69,75 @@ export default function DriverMap() {
     distance: "---",
     name: "---",
   });
+  const [useFence, setUseFence] = useState(true);
+  const [mapStyle, setMapStyle] = useState<
+    "navigation-night-v1" | "satellite-streets-v12" | "outdoors-v12"
+  >("satellite-streets-v12");
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
+  // --- FEATURE: Spawn new bins ---
+  const handleMapDoubleClick = (latlng: L.LatLng) => {
+    const newBin: Bin = {
+      id: Date.now(),
+      name: `New Station ${bins.length + 1}`,
+      lat: latlng.lat,
+      lng: latlng.lng,
+      fillLevel: Math.floor(Math.random() * 60) + 40,
+    };
+    setBins((prev) => [...prev, newBin]);
+  };
+
+  // --- FEATURE: Proximity Auto-Collection ---
   useEffect(() => {
     if (!driverPos) return;
+    setBins((prevBins) => {
+      let collectedAny = false;
+      const updatedBins = prevBins.map((bin) => {
+        if (bin.fillLevel > 0) {
+          const dist = getDistance(driverPos, [bin.lat, bin.lng]);
+          if (dist < 30) {
+            collectedAny = true;
+            setHistory((prevH) =>
+              [
+                {
+                  id: bin.id,
+                  name: bin.name,
+                  time: new Date().toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                },
+                ...prevH,
+              ].slice(0, 10),
+            );
 
-    // Filter for bins >= 40% (collection threshold) or manually selected
+            if (window.navigator.vibrate)
+              window.navigator.vibrate([100, 50, 100]);
+            return { ...bin, fillLevel: 0 };
+          }
+        }
+        return bin;
+      });
+      return collectedAny ? updatedBins : prevBins;
+    });
+  }, [driverPos]);
+
+  useEffect(() => {
+    if (!driverPos) return;
     const active = bins.filter(
       (b) => b.fillLevel >= 40 || b.id === selectedBinId,
     );
-
     if (active.length > 0) {
-      // TS FIX: Use local mapping to ensure property 'd' exists
       const sorted = active
-        .map((b) => ({
-          ...b,
-          d: getDistance(driverPos, [b.lat, b.lng]),
-        }))
+        .map((b) => ({ ...b, d: getDistance(driverPos, [b.lat, b.lng]) }))
         .sort((a, b) => a.d - b.d);
-
       setTopCandidates(sorted.slice(0, 3).map((b) => b.id));
-
       const nextOne = selectedBinId
         ? sorted.find((b) => b.id === selectedBinId) || sorted[0]
         : sorted[0];
-
       setNextBinInfo({
         name: nextOne.name,
         distance:
@@ -121,7 +182,7 @@ export default function DriverMap() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        .leaflet-container { height: 100% !important; width: 100% !important; background: #f1f5f9 !important; }
+        .leaflet-container { height: 100% !important; width: 100% !important; background: #0f172a !important; }
         .leaflet-marker-icon { transition: transform 0.8s; ${isNavMode ? `transform: rotate(${heading}deg) !important;` : ""} }
       `,
         }}
@@ -141,12 +202,16 @@ export default function DriverMap() {
           zoom={18}
           maxZoom={22}
           zoomControl={false}
+          doubleClickZoom={false}
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer
-            url={`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
-            attribution="© Mapbox"
+            key={mapStyle} // Key forces a re-render when style changes
+            url={`https://api.mapbox.com/styles/v1/mapbox/${mapStyle}/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
+            maxZoom={22}
+            maxNativeZoom={mapStyle === "satellite-streets-v12" ? 18 : 20}
           />
+          <MapClickHandler onMapDoubleClick={handleMapDoubleClick} />
 
           {driverPos && (
             <Marker
@@ -165,7 +230,7 @@ export default function DriverMap() {
               isEditMode={isEditMode}
               isCandidate={topCandidates.includes(bin.id)}
               isSelected={selectedBinId === bin.id}
-              onSelect={() => setSelectedBinId(bin.id)}
+              onClick={() => setSelectedBinId(bin.id)}
               onCollect={(id) => {
                 setBins((prev) =>
                   prev.map((b) => (b.id === id ? { ...b, fillLevel: 0 } : b)),
@@ -180,52 +245,53 @@ export default function DriverMap() {
             />
           ))}
 
-          {driverPos && (
-            <RoutingLayer
-              driverPos={driverPos}
-              bins={bins}
-              selectedBinId={selectedBinId}
-              routeKey={routeKey}
-              onRouteUpdate={handleRouteUpdate}
-              mode={routingMode}
-              maxDetour={maxDetour}
-            />
-          )}
+          <RoutingLayer
+            driverPos={driverPos}
+            bins={bins}
+            selectedBinId={selectedBinId}
+            routeKey={routeKey}
+            onRouteUpdate={handleRouteUpdate}
+            mode={routingMode}
+            maxDetour={maxDetour}
+            useFence={useFence}
+          />
         </MapContainer>
+
+        {/* Sidebar Toggle Button */}
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="hidden md:flex absolute top-1/2 right-4 z-[1002] -translate-y-1/2 w-8 h-12 bg-white border border-slate-200 shadow-xl rounded-xl items-center justify-center"
+          className="hidden md:flex absolute top-1/2 right-4 z-[1002] -translate-y-1/2 w-8 h-12 bg-white border border-slate-200 shadow-xl rounded-xl items-center justify-center transition-all hover:bg-slate-50 active:scale-95"
         >
-          {isSidebarOpen ? "❯" : "❮"}
+          <span
+            className={`transition-transform duration-300 ${isSidebarOpen ? "" : "rotate-180"}`}
+          >
+            ❯
+          </span>
         </button>
       </div>
 
-      {/* DASHBOARD / SIDEBAR WRAPPER */}
+      {/* DASHBOARD / SIDEBAR WRAPPER (Restored Logic) */}
       <div
         className={`fixed md:relative bottom-0 left-0 right-0 z-[1001] 
-    transition-all duration-700 cubic-bezier(0.32, 0.72, 0, 1)
-    ${isDashboardVisible ? "h-[85vh]" : "h-[80px]"} 
-    ${isSidebarOpen ? "md:w-[400px]" : "md:w-0"} 
-    md:h-full pointer-events-none md:pointer-events-auto order-2`}
+        transition-all duration-700 cubic-bezier(0.32, 0.72, 0, 1)
+        ${isDashboardVisible ? "h-[85vh]" : "h-[80px]"} 
+        ${isSidebarOpen ? "md:w-[400px]" : "md:w-0"} 
+        md:h-full pointer-events-none md:pointer-events-auto order-2`}
       >
         <div
           className="pointer-events-auto h-full bg-white/95 backdrop-blur-xl
-      rounded-t-[2.5rem] md:rounded-none 
-      shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.15)] md:shadow-[-10px_0_30px_rgba(0,0,0,0.05)] 
-      border-t border-slate-200/50 flex flex-col overflow-hidden"
+          rounded-t-[2.5rem] md:rounded-none 
+          shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.15)] md:shadow-[-10px_0_30px_rgba(0,0,0,0.05)] 
+          border-t border-slate-200/50 flex flex-col overflow-hidden"
         >
-          {/* REFINED MOBILE DRAG HANDLE */}
+          {/* Mobile Drag Handle */}
           <div
             className="w-full flex flex-col items-center pt-3 pb-2 cursor-pointer md:hidden"
             onClick={() => setIsDashboardVisible(!isDashboardVisible)}
           >
-            {/* The Handle Bar */}
             <div
-              className={`w-12 h-1.5 rounded-full transition-all duration-500 
-        ${isDashboardVisible ? "bg-slate-300" : "bg-emerald-500 w-16 animate-pulse"}`}
+              className={`w-12 h-1.5 rounded-full transition-all duration-500 ${isDashboardVisible ? "bg-slate-300" : "bg-emerald-500 w-16 animate-pulse"}`}
             />
-
-            {/* Quick Info (Only visible when collapsed) */}
             {!isDashboardVisible && (
               <div className="mt-2 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -235,10 +301,11 @@ export default function DriverMap() {
             )}
           </div>
 
+          {/* Dashboard Content */}
           <div
             className={`flex-1 transition-opacity duration-300 
-      ${isDashboardVisible ? "opacity-100" : "opacity-0 md:opacity-100 pointer-events-none md:pointer-events-auto"} 
-      ${!isSidebarOpen && "md:opacity-0"}`}
+            ${isDashboardVisible ? "opacity-100" : "opacity-0 md:opacity-100 pointer-events-none md:pointer-events-auto"} 
+            ${!isSidebarOpen && "md:opacity-0"}`}
           >
             <EcoDashboard
               routingMode={routingMode}
@@ -254,6 +321,12 @@ export default function DriverMap() {
                 setRouteKey((k) => k + 1);
                 setSelectedBinId(null);
               }}
+              useFence={useFence}
+              setUseFence={setUseFence}
+              history={history}
+              onClearHistory={() => setHistory([])}
+              mapStyle={mapStyle}
+  setMapStyle={setMapStyle}
             />
           </div>
         </div>

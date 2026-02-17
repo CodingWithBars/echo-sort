@@ -18,6 +18,7 @@ interface BinMarkerProps {
   isCandidate?: boolean; 
   isSelected?: boolean;  
   onSelect?: () => void; 
+  onClick?: () => void; // Added to fix the TypeScript 'Property onClick does not exist' error
   onCollect?: (id: number) => void;
   onMove?: (id: number, lat: number, lng: number) => void;
 }
@@ -28,10 +29,14 @@ export default function BinMarker({
   isCandidate, 
   isSelected, 
   onSelect, 
+  onClick, // Destructured onClick
   onCollect, 
   onMove 
 }: BinMarkerProps) {
   const markerRef = useRef<any>(null);
+
+  // Determine which selection handler to use (supports both prop names)
+  const handleSelection = onSelect || onClick;
 
   const eventHandlers = useMemo(
     () => ({
@@ -45,11 +50,11 @@ export default function BinMarker({
       click() {
         // If not editing, clicking a candidate bin selects it for the math engine
         if (!isEditMode && isCandidate) {
-          onSelect?.();
+          handleSelection?.();
         }
       }
     }),
-    [bin.id, onMove, onSelect, isEditMode, isCandidate]
+    [bin.id, onMove, handleSelection, isEditMode, isCandidate]
   );
 
   const isCritical = bin.fillLevel > 90;

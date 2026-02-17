@@ -1,16 +1,30 @@
 "use client";
 
+import React from "react";
+
+interface CollectionLog {
+  id: number;
+  name: string;
+  time: string;
+}
+
 interface DashboardProps {
   routingMode: "fastest" | "priority";
   setRoutingMode: (m: "fastest" | "priority") => void;
   maxDetour: number;
   setMaxDetour: (v: number) => void;
+  useFence: boolean;
+  setUseFence: (v: boolean) => void;
   nextBin: { name: string; distance: string };
   eta: { dist: string; time: string };
   targetCount: number;
   driverPos: any;
   onStartTracking: () => void;
   onRefresh: () => void;
+  history?: CollectionLog[];
+  onClearHistory?: () => void;
+  mapStyle: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12";
+  setMapStyle: (s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12") => void;
 }
 
 export default function EcoDashboard({
@@ -18,48 +32,95 @@ export default function EcoDashboard({
   setRoutingMode,
   maxDetour,
   setMaxDetour,
+  useFence,
+  setUseFence,
   nextBin,
   eta,
   targetCount,
   driverPos,
   onStartTracking,
   onRefresh,
+  history = [],
+  onClearHistory,
+  mapStyle,
+  setMapStyle,
 }: DashboardProps) {
+  const styles: { id: typeof mapStyle; label: string; icon: string }[] = [
+    { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
+    { id: "navigation-night-v1", label: "Night", icon: "🌙" },
+    { id: "outdoors-v12", label: "Terrain", icon: "🏔️" },
+  ];
+
   return (
-    /* Main Wrapper: Set a defined height and use flex-col */
     <div className="flex flex-col h-[85vh] md:h-screen bg-white">
-      {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
-        <div className="hidden md:block mb-8">
-          <h1 className="text-2xl font-black text-slate-800 tracking-tighter italic">
-            ECO<span className="text-emerald-500">ROUTE</span>
-          </h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Fleet Logic v2.0
-          </p>
+        
+        {/* MAP STYLE PICKER */}
+        <div className="mb-6">
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">
+            Map Appearance
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            {styles.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setMapStyle(s.id)}
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all duration-300 ${
+                  mapStyle === s.id
+                    ? "bg-blue-50 border-blue-400 shadow-sm scale-[1.02]"
+                    : "bg-slate-50 border-slate-100 opacity-60 hover:opacity-100"
+                }`}
+              >
+                <span className="text-lg">{s.icon}</span>
+                <span
+                  className={`text-[8px] font-black uppercase ${
+                    mapStyle === s.id ? "text-blue-600" : "text-slate-500"
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-xl mb-6 max-w-[240px]">
+        {/* Header Toggle (Routing Mode & Fence) */}
+        <div className="flex justify-between items-center mb-6 gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setRoutingMode("fastest")}
+              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                routingMode === "fastest" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"
+              }`}
+            >
+              🍃 Efficient
+            </button>
+            <button
+              onClick={() => setRoutingMode("priority")}
+              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                routingMode === "priority" ? "bg-white text-orange-500 shadow-sm" : "text-slate-400"
+              }`}
+            >
+              ⚠️ Urgent
+            </button>
+          </div>
+
           <button
-            onClick={() => setRoutingMode("fastest")}
-            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${routingMode === "fastest" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}
+            onClick={() => setUseFence(!useFence)}
+            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${
+              useFence
+                ? "bg-blue-50 border-blue-200 text-blue-600"
+                : "bg-slate-50 border-slate-200 text-slate-400"
+            }`}
           >
-            🍃 Efficient
-          </button>
-          <button
-            onClick={() => setRoutingMode("priority")}
-            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${routingMode === "priority" ? "bg-white text-orange-500 shadow-sm" : "text-slate-400"}`}
-          >
-            ⚠️ Urgent
+            {useFence ? "🛡️ Fence: ON" : "🌍 Global"}
           </button>
         </div>
 
         {/* DETOUR SLIDER */}
         <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-[10px] font-black text-slate-500 uppercase">
-              Detour Range
-            </span>
+            <span className="text-[10px] font-black text-slate-500 uppercase">Detour Range</span>
             <span className="text-[10px] font-black text-emerald-600 bg-white px-2 py-0.5 rounded border">
               +{maxDetour}m
             </span>
@@ -67,62 +128,80 @@ export default function EcoDashboard({
           <input
             type="range"
             min="0"
-            max="1500"
+            max="800"
             step="50"
             value={maxDetour}
             onChange={(e) => setMaxDetour(parseInt(e.target.value))}
             className="w-full h-1.5 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
           />
+          <p className="text-[8px] font-bold text-slate-400 mt-2 uppercase">
+            Filters bins by trip effort
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 mb-4">
-          <StatCard
-            label="Next Station"
-            value={nextBin.name}
-            sub={nextBin.distance}
-            color="text-emerald-600"
-            icon="📍"
-          />
-
-          <div
-            className={`p-6 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${routingMode === "priority" ? "bg-orange-500 border-orange-400" : "bg-emerald-600 border-emerald-500"}`}
-          >
-            <span className="block text-[10px] font-black opacity-80 uppercase mb-1">
-              Total Route distance
-            </span>
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 gap-4 mb-6">
+          <StatCard label="Next Station" value={nextBin.name} sub={nextBin.distance} color="text-emerald-600" icon="📍" />
+          
+          <div className={`p-2 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
+            routingMode === "priority" ? "bg-orange-500 border-orange-400" : "bg-emerald-600 border-emerald-500"
+          }`}>
+            <span className="block text-[10px] font-black opacity-80 uppercase mb-1">Total Route distance</span>
             <span className="block text-3xl font-black">{eta.dist}</span>
             <hr className="opacity-20 my-2" />
             <span className="text-sm font-bold">⏱️ EST. {eta.time}</span>
           </div>
 
-          <StatCard
-            label="Active Stops"
-            value={targetCount.toString()}
-            sub="Total Bins"
-            color="text-slate-400"
-            icon="🗑️"
-          />
+          <StatCard label="Active Stops" value={targetCount.toString()} sub="Total Bins" color="text-slate-400" icon="🗑️" />
         </div>
+
+        {/* RECENT COLLECTIONS LOG */}
+        {history.length > 0 && (
+          <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex justify-between items-center mb-3 px-1">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                Recent Collections
+              </span>
+              <button
+                onClick={onClearHistory}
+                className="text-[8px] font-black text-red-400 uppercase hover:text-red-600 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="space-y-2">
+              {history.map((log, i) => (
+                <div key={`${log.id}-${i}`} className="flex items-center justify-between bg-white border border-slate-100 p-3 rounded-xl shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs">✅</span>
+                    <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight">
+                      {log.name}
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400">{log.time}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sticky Bottom Actions */}
-      <div
-        className="p-5 pt-2 border-t border-slate-100 bg-white/80 backdrop-blur-sm 
-     /* Add extra padding at the very bottom for mobile safe areas */
-     pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-8"
-      >
+      <div className="p-5 pt-2 border-t border-slate-100 bg-white/80 backdrop-blur-sm pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-8">
         <div className="flex flex-col gap-3">
           <button
             onClick={onStartTracking}
-            className={`w-full py-4 md:py-5 rounded-[1.8rem] font-black text-xs uppercase tracking-widest transition-all 
-      ${driverPos ? "bg-slate-100 text-slate-400 border border-slate-200" : "bg-blue-600 text-white shadow-lg shadow-blue-100"}`}
+            className={`w-full py-4 md:py-5 rounded-[1.8rem] font-black text-xs uppercase transition-all ${
+              driverPos
+                ? "bg-slate-100 text-slate-400 border border-slate-200"
+                : "bg-blue-600 text-white shadow-lg shadow-blue-100"
+            }`}
           >
             {driverPos ? "📡 System Active" : "🚀 Launch Tracking"}
           </button>
-
           <button
             onClick={onRefresh}
-            className="w-full py-3 md:py-4 rounded-[1.8rem] bg-emerald-50 text-emerald-600 border border-emerald-100 font-black text-[10px] uppercase flex justify-center items-center gap-2 hover:bg-emerald-100 transition-colors"
+            className="w-full py-3 md:py-4 rounded-[1.8rem] bg-emerald-50 text-emerald-600 border border-emerald-100 font-black text-[10px] uppercase flex justify-center items-center gap-2"
           >
             <span>🔄</span> Recalculate Path
           </button>
