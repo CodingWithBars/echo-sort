@@ -3,8 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-
-const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+import { getDistance } from "./MapAssets";
 
 interface RoutingLayerProps {
   driverPos: [number, number];
@@ -13,109 +12,96 @@ interface RoutingLayerProps {
   routeKey: number;
   onRouteUpdate: (summary: { distance: number; time: number }) => void;
   mode: 'fastest' | 'priority';
+  maxDetour: number;
 }
 
 export default function RoutingLayer({ 
-  driverPos, 
-  bins, 
-  selectedBinId, 
-  routeKey, 
-  onRouteUpdate, 
-  mode 
+  driverPos, bins, selectedBinId, routeKey, onRouteUpdate, mode, maxDetour 
 }: RoutingLayerProps) {
   const map = useMap();
-  const routingControlRef = useRef<any>(null);
+  const pathLayerRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
-    if (!map || !driverPos || !token) return;
+    if (!map || !driverPos || bins.length === 0) return;
 
-    const getOptimizedRoute = async () => {
-      // 1. Cleanup old routing
-      if (routingControlRef.current) {
-        map.removeControl(routingControlRef.current);
-        routingControlRef.current = null;
+    // 1. ORDERING LOGIC (Same "Hybrid Brain" as before)
+    let urgentRemaining = bins.filter(b => b.fillLevel >= 70 || b.id === selectedBinId);
+    let optRemaining = bins.filter(b => b.fillLevel >= 40 && b.fillLevel < 70 && b.id !== selectedBinId);
+
+    if (urgentRemaining.length === 0 && optRemaining.length === 0) return;
+
+    let currentPos: [number, number] = driverPos;
+    const waypointOrder: [number, number][] = [driverPos];
+    if (urgentRemaining.length === 0) urgentRemaining = [...optRemaining];
+
+    while (urgentRemaining.length > 0) {
+      let closestIdx = 0;
+      let minDist = getDistance(currentPos, [urgentRemaining[0].lat, urgentRemaining[0].lng]);
+
+      for (let i = 1; i < urgentRemaining.length; i++) {
+        const d = getDistance(currentPos, [urgentRemaining[i].lat, urgentRemaining[i].lng]);
+        if (d < minDist) { minDist = d; closestIdx = i; }
       }
 
-      // 2. Filter target bins (Full enough or very close)
-      const targetBins = bins.filter((b: any) => 
-        b.fillLevel > 50 || (selectedBinId === b.id)
-      );
+      const nextUrgent = urgentRemaining.splice(closestIdx, 1)[0];
+      const nextUrgentPos: [number, number] = [nextUrgent.lat, nextUrgent.lng];
 
-      if (targetBins.length === 0) {
-        onRouteUpdate({ distance: 0, time: 0 });
-        return;
-      }
+      const onTheWay = optRemaining.filter(opt => {
+        const dToOpt = getDistance(currentPos, [opt.lat, opt.lng]);
+        const dOptToUrgent = getDistance([opt.lat, opt.lng], nextUrgentPos);
+        return (dToOpt + dOptToUrgent) - minDist < maxDetour;
+      });
 
-      // 3. Prepare coordinates for Optimization API
-      // Mapbox expects: lon,lat;lon,lat...
-      const truckCoord = `${driverPos[1]},${driverPos[0]}`;
+      onTheWay.sort((a, b) => getDistance(currentPos, [a.lat, a.lng]) - getDistance(currentPos, [b.lat, b.lng]));
       
-      // If a bin is manually selected, we prioritize it
-      let sortedTargets = [...targetBins];
-      if (selectedBinId) {
-        sortedTargets = [
-          ...targetBins.filter(b => b.id === selectedBinId),
-          ...targetBins.filter(b => b.id !== selectedBinId)
-        ];
-      }
+      onTheWay.forEach(opt => {
+        waypointOrder.push([opt.lat, opt.lng]);
+        optRemaining = optRemaining.filter(o => o.id !== opt.id);
+      });
 
-      const binCoords = sortedTargets.map(b => `${b.lng},${b.lat}`).join(';');
-      const allCoords = `${truckCoord};${binCoords}`;
+      waypointOrder.push(nextUrgentPos);
+      currentPos = nextUrgentPos;
+    }
+
+    // 2. FETCH ROAD-SNAPPED GEOMETRY
+    const getRoadRoute = async () => {
+      // Mapbox expects lng,lat
+      const coordsString = waypointOrder.map(p => `${p[1]},${p[0]}`).join(';');
+      const query = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordsString}?geometries=geojson&overview=full&access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`;
 
       try {
-        // 4. CALL OPTIMIZATION API (Dijkstra/TSP Logic)
-        // 'source=first' keeps the truck at the start. 
-        // 'destination=any' allows the last bin to be wherever is most efficient.
-        const response = await fetch(
-          `https://api.mapbox.com/optimized-trips/v1/mapbox/driving/${allCoords}?source=first&access_token=${token}&geometries=geojson&overview=full`
-        );
+        const response = await fetch(query);
         const data = await response.json();
 
-        if (data.code !== 'Ok') throw new Error("Optimization API Error");
+        if (data.routes && data.routes[0]) {
+          const route = data.routes[0];
+          // Convert GeoJSON [lng, lat] to Leaflet [lat, lng]
+          const coordinates = route.geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
 
-        // 5. Extract the optimized sequence of waypoints
-        const optimizedWaypoints = data.waypoints
-          .sort((a: any, b: any) => a.waypoint_index - b.waypoint_index)
-          .map((w: any) => L.latLng(w.location[1], w.location[0]));
+          if (pathLayerRef.current) map.removeLayer(pathLayerRef.current);
 
-        // 6. Use Leaflet Routing Machine only for DISPLAYING the calculated path
-        // @ts-ignore
-        await import("leaflet-routing-machine");
-        const LeafletAny = L as any;
+          pathLayerRef.current = L.polyline(coordinates, {
+            color: mode === 'priority' ? '#f97316' : '#10b981',
+            weight: 6,
+            opacity: 0.8,
+            lineJoin: "round",
+            lineCap: "round"
+          }).addTo(map);
 
-        routingControlRef.current = LeafletAny.Routing.control({
-          waypoints: optimizedWaypoints,
-          router: LeafletAny.Routing.mapbox(token, { profile: 'mapbox/driving' }),
-          lineOptions: {
-            styles: [{ 
-              color: selectedBinId ? '#3b82f6' : '#10b981', 
-              weight: 9, 
-              opacity: 0.85,
-              lineCap: 'round'
-            }],
-            extendToWaypoints: true,
-          },
-          show: false,
-          addWaypoints: false,
-          createMarker: () => null
-        })
-        .on('routesfound', (e: any) => {
-          const summary = e.routes[0].summary;
-          onRouteUpdate({ distance: summary.totalDistance, time: summary.totalTime });
-        })
-        .addTo(map);
-
+          onRouteUpdate({ 
+            distance: route.distance, 
+            time: route.duration // Mapbox returns duration in seconds
+          });
+        }
       } catch (error) {
-        console.error("Optimization failed, falling back to simple routing:", error);
+        console.error("Routing error:", error);
       }
     };
 
-    getOptimizedRoute();
-    
-    return () => {
-      if (routingControlRef.current) map.removeControl(routingControlRef.current);
-    };
-  }, [map, driverPos, bins, selectedBinId, routeKey, mode]);
+    getRoadRoute();
+
+    return () => { if (pathLayerRef.current) map.removeLayer(pathLayerRef.current); };
+  }, [map, driverPos, bins, selectedBinId, routeKey, mode, maxDetour]);
 
   return null;
 }

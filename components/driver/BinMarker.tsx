@@ -15,9 +15,9 @@ interface Bin {
 interface BinMarkerProps {
   bin: Bin;
   isEditMode: boolean;
-  isCandidate?: boolean; // NEW: Is it one of the top 2 closest?
-  isSelected?: boolean;  // NEW: Has the driver manually clicked it?
-  onSelect?: () => void; // NEW: Callback for manual selection
+  isCandidate?: boolean; 
+  isSelected?: boolean;  
+  onSelect?: () => void; 
   onCollect?: (id: number) => void;
   onMove?: (id: number, lat: number, lng: number) => void;
 }
@@ -43,7 +43,7 @@ export default function BinMarker({
         }
       },
       click() {
-        // If driver clicks a bin that is a candidate, select it for routing
+        // If not editing, clicking a candidate bin selects it for the math engine
         if (!isEditMode && isCandidate) {
           onSelect?.();
         }
@@ -58,7 +58,8 @@ export default function BinMarker({
   return (
     <Marker
       position={[bin.lat, bin.lng]}
-      icon={createBinIcon(bin.fillLevel)}
+      // PASSING isSelected to our new MapAssets function
+      icon={createBinIcon(bin.fillLevel, isSelected)}
       draggable={isEditMode}
       eventHandlers={eventHandlers}
       ref={markerRef}
@@ -66,33 +67,33 @@ export default function BinMarker({
       <Tooltip 
         permanent 
         direction="top" 
-        offset={[0, -20]} 
+        offset={[0, -25]} 
         className="eco-label-tooltip"
       >
-        <div className={`flex flex-col items-center group`}>
-          {/* VISUAL FEEDBACK: Candidate Highlight */}
+        <div className="flex flex-col items-center">
+          {/* Candidate Pulse - Visual Hint for the Driver */}
           {isCandidate && !isEditMode && (
-            <div className={`absolute -inset-2 rounded-full blur-md animate-pulse ${
-              isSelected ? 'bg-blue-400 opacity-60' : 'bg-emerald-400 opacity-40'
+            <div className={`absolute -inset-3 rounded-full blur-lg animate-pulse ${
+              isSelected ? 'bg-blue-400/40' : 'bg-emerald-400/30'
             }`} />
           )}
 
-          <div className={`relative flex items-center gap-2 px-3 py-1 rounded-full shadow-lg border transition-all duration-300 ${
+          <div className={`relative flex items-center gap-2 px-3 py-1.5 rounded-[12px] shadow-xl border transition-all duration-500 ${
             isSelected 
               ? 'bg-blue-600 border-blue-400 scale-110 z-[1002]' 
               : isEditMode 
-              ? 'cursor-move border-emerald-400 border-2' 
+              ? 'bg-white border-emerald-400 border-2' 
               : isCritical 
-              ? 'bg-red-50 border-red-100 animate-pulse' 
-              : 'bg-white border-slate-100'
+              ? 'bg-red-50 border-red-200 animate-pulse' 
+              : 'bg-white/90 border-slate-100 backdrop-blur-sm'
           }`}>
-            <span className={`font-black text-[10px] uppercase tracking-tighter ${
-              isSelected ? 'text-white' : 'text-slate-700'
+            <span className={`font-black text-[10px] uppercase tracking-tight ${
+              isSelected ? 'text-white' : 'text-slate-800'
             }`}>
-              {isSelected ? "📍 " : isEditMode ? "🖐️ " : ""}{bin.name}
+              {isSelected ? "🎯 " : ""}{bin.name}
             </span>
             
-            <div className={`w-[1px] h-3 ${isSelected ? 'bg-blue-400' : 'bg-slate-200'}`} />
+            <div className={`w-[1px] h-3 ${isSelected ? 'bg-blue-300' : 'bg-slate-200'}`} />
             
             <span className={`font-black text-[10px] ${
               isSelected 
@@ -107,30 +108,30 @@ export default function BinMarker({
             </span>
           </div>
           
-          {/* Driver Choice Label */}
+          {/* Action Callout */}
           {isCandidate && !isSelected && !isEditMode && (
-            <span className="text-[8px] font-bold text-emerald-700 bg-white/80 px-2 rounded-full mt-1 shadow-sm border border-emerald-100">
-              TAP TO ROUTE
+            <span className="text-[7px] font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full mt-1.5 shadow-sm border border-emerald-200 uppercase tracking-widest">
+              Tap to route
             </span>
           )}
         </div>
       </Tooltip>
 
       <Popup className="eco-popup">
-        <div className="p-2 text-center min-w-[130px]">
-          <h3 className="text-base font-bold text-slate-800 mb-1">{bin.name}</h3>
-          <p className="text-[9px] text-slate-500 mb-3">Status: {bin.fillLevel}% Full</p>
+        <div className="p-3 text-center min-w-[150px]">
+          <h3 className="text-sm font-black text-slate-800 mb-0.5 uppercase tracking-tight">{bin.name}</h3>
+          <p className="text-[10px] font-bold text-slate-400 mb-4 tracking-wide">CAPACITY: {bin.fillLevel}%</p>
           
           <button 
             onClick={(e) => {
               e.stopPropagation();
               onCollect?.(bin.id);
             }}
-            className={`w-full py-2.5 text-white text-[10px] font-black uppercase rounded-[1.2rem] transition-all shadow-md active:scale-95 ${
-              isEditMode ? 'bg-red-500' : 'bg-emerald-600 hover:bg-emerald-700'
+            className={`w-full py-3 text-white text-[10px] font-black uppercase rounded-[1rem] transition-all shadow-lg active:scale-90 ${
+              isEditMode ? 'bg-red-500 shadow-red-100' : 'bg-emerald-600 shadow-emerald-100 hover:bg-emerald-700'
             }`}
           >
-            {isEditMode ? 'Remove Node' : 'Mark Collected'}
+            {isEditMode ? 'Remove Station' : 'Confirm Collection'}
           </button>
         </div>
       </Popup>
