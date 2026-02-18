@@ -56,6 +56,7 @@ export default function RoutingLayer(props: RoutingLayerProps) {
 
     const GLOBAL_MAX_RANGE = 2500;
     const MIN_FILL_THRESHOLD = 40;
+    const CLOSE_BIN_OVERRIDE = 35; // ⭐ new fix
 
     // =========================================================
     // 1. RADIUS FILTER
@@ -70,10 +71,8 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     nearbyBins = clusterBins(nearbyBins, clusterRadius);
 
     // =========================================================
-    // 3. THRESHOLD FILTER (NEW LOGIC)
-    nearbyBins = nearbyBins.filter(
-      (b) => b.fillLevel >= MIN_FILL_THRESHOLD
-    );
+    // 3. THRESHOLD FILTER
+    nearbyBins = nearbyBins.filter((b) => b.fillLevel >= MIN_FILL_THRESHOLD);
 
     if (!nearbyBins.length) {
       clearPath();
@@ -100,12 +99,16 @@ export default function RoutingLayer(props: RoutingLayerProps) {
         const candidatePos: [number, number] = [candidate.lat, candidate.lng];
 
         const d = getDistance(currentPos, candidatePos);
+        const directFromStart = getDistance(driverPos, candidatePos);
+
+        // ⭐ CLOSE BIN OVERRIDE (new)
+        if (d < CLOSE_BIN_OVERRIDE) {
+          bestIdx = i;
+          break;
+        }
 
         // ---------- EARLY DETOUR PRUNING ----------
-        if (
-          accumulatedDistance > 0 &&
-          d / accumulatedDistance > maxDetour
-        ) {
+        if (accumulatedDistance > 0 && d > directFromStart * maxDetour) {
           continue;
         }
 
@@ -200,13 +203,10 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     ) {
       const distance = getDistance(from, to);
 
-      // α Distance
       const distanceCost = distance * 1.0;
-
-      // δ Fill priority
       const fillReward = fill * 25;
 
-      // γ Cluster reward (service density)
+      // Cluster reward
       let cluster = 0;
       for (let j = 0; j < all.length; j++) {
         if (j === index) continue;
@@ -214,7 +214,7 @@ export default function RoutingLayer(props: RoutingLayerProps) {
       }
       const clusterReward = cluster * 200;
 
-      // ε Soft U-turn penalty (angle-based, never prohibitive)
+      // ⭐ Turn penalty with safety clamp
       let turnPenalty = 0;
       if (route.length >= 2) {
         const p1 = route[route.length - 2];
@@ -228,23 +228,28 @@ export default function RoutingLayer(props: RoutingLayerProps) {
         const mag2 = Math.hypot(v2[0], v2[1]);
 
         if (mag1 && mag2) {
-          const angle = Math.acos(dot / (mag1 * mag2)) * 180 / Math.PI;
-          turnPenalty = angle * 4; // soft, U-turn allowed
+          let cos = dot / (mag1 * mag2);
+          cos = Math.max(-1, Math.min(1, cos)); // ⭐ clamp fix
+          const angle = (Math.acos(cos) * 180) / Math.PI;
+          turnPenalty = Math.pow(angle / 45, 2) * 12;
         }
       }
 
-      // Backtracking penalty (centroid-based)
-      let centroidLat = 0;
-      let centroidLng = 0;
-      all.forEach((b) => {
-        centroidLat += b.lat;
-        centroidLng += b.lng;
-      });
-      centroidLat /= all.length;
-      centroidLng /= all.length;
+      // Backtracking penalty with safety
+      let backtrackPenalty = 0;
+      if (all.length > 0) {
+        let centroidLat = 0;
+        let centroidLng = 0;
+        all.forEach((b) => {
+          centroidLat += b.lat;
+          centroidLng += b.lng;
+        });
+        centroidLat /= all.length;
+        centroidLng /= all.length;
 
-      const backtrackPenalty =
-        getDistance(to, [centroidLat, centroidLng]) * 0.3;
+        backtrackPenalty =
+          getDistance(to, [centroidLat, centroidLng]) * 0.08;
+      }
 
       return (
         distanceCost +

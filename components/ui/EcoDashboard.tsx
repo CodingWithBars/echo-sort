@@ -15,17 +15,23 @@ interface DashboardProps {
   setMaxDetour: (v: number) => void;
   useFence: boolean;
   setUseFence: (v: boolean) => void;
+
+  // ⭐ NEW PROP
+  currentBin?: { name: string; distance: string };
+
   nextBin: { name: string; distance: string };
   eta: { dist: string; time: string };
   targetCount: number;
   driverPos: any;
-  // State management props
-  isTracking: boolean; 
+
+  isTracking: boolean;
   onStartTracking: () => void;
-  onStopTracking: () => void; 
+  onStopTracking: () => void;
   onRefresh: () => void;
+
   history?: CollectionLog[];
   onClearHistory?: () => void;
+
   mapStyle: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12";
   setMapStyle: (
     s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12",
@@ -39,6 +45,9 @@ export default function EcoDashboard({
   setMaxDetour,
   useFence,
   setUseFence,
+
+  currentBin, // ⭐ NEW
+
   nextBin,
   eta,
   targetCount,
@@ -63,43 +72,13 @@ export default function EcoDashboard({
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await onRefresh();
-    // Brief timeout to ensure the animation is visible to the user
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
   return (
     <div className="flex flex-col h-[85vh] md:h-screen bg-white">
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
-        {/* MAP STYLE PICKER */}
-        <div className="mb-6">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">
-            Map Appearance
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            {styles.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setMapStyle(s.id)}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all duration-300 ${
-                  mapStyle === s.id
-                    ? "bg-blue-50 border-blue-400 shadow-sm scale-[1.02]"
-                    : "bg-slate-50 border-slate-100 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <span className="text-lg">{s.icon}</span>
-                <span
-                  className={`text-[8px] font-black uppercase ${
-                    mapStyle === s.id ? "text-blue-600" : "text-slate-500"
-                  }`}
-                >
-                  {s.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Header Toggle (Routing Mode & Fence) */}
+        {/* MODE + FENCE */}
         <div className="flex justify-between items-center mb-6 gap-2">
           <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
             <button
@@ -136,8 +115,24 @@ export default function EcoDashboard({
           </button>
         </div>
 
-        {/* DETOUR SLIDER */}
-        <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+        {/* ROUTE SUMMARY */}
+        <div
+          className={`p-6 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
+            routingMode === "priority"
+              ? "bg-orange-500 border-orange-400"
+              : "bg-emerald-600 border-emerald-500"
+          }`}
+        >
+          <span className="block text-[10px] font-black opacity-80 uppercase mb-1">
+            Total Route distance
+          </span>
+          <span className="block text-3xl font-black">{eta.dist}</span>
+          <hr className="opacity-20 my-2" />
+          <span className="text-sm font-bold">⏱️ EST. {eta.time}</span>
+        </div>
+
+        {/* DETOUR */}
+        <div className="mt-3 mb-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
           <div className="flex justify-between items-center mb-3">
             <span className="text-[10px] font-black text-slate-500 uppercase">
               Detour Range
@@ -160,39 +155,33 @@ export default function EcoDashboard({
           </p>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 gap-4 mb-6">
+        {/* ⭐ CURRENT BIN CARD */}
+        {currentBin && (
           <StatCard
-            label="Next Station"
-            value={nextBin.name}
-            sub={nextBin.distance}
-            color="text-emerald-600"
-            icon="📍"
+            label="Current Station"
+            value={currentBin.name}
+            sub={currentBin.distance}
+            color="text-blue-600"
+            icon="🚚"
           />
+        )}
 
-          <div
-            className={`p-6 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
-              routingMode === "priority"
-                ? "bg-orange-500 border-orange-400"
-                : "bg-emerald-600 border-emerald-500"
-            }`}
-          >
-            <span className="block text-[10px] font-black opacity-80 uppercase mb-1">
-              Total Route distance
-            </span>
-            <span className="block text-3xl font-black">{eta.dist}</span>
-            <hr className="opacity-20 my-2" />
-            <span className="text-sm font-bold">⏱️ EST. {eta.time}</span>
-          </div>
+        {/* NEXT BIN */}
+        <StatCard
+          label="Next Station"
+          value={nextBin.name}
+          sub={nextBin.distance}
+          color="text-emerald-600"
+          icon="📍"
+        />
 
-          <StatCard
-            label="Active Stops"
-            value={targetCount.toString()}
-            sub="Total Bins"
-            color="text-slate-400"
-            icon="🗑️"
-          />
-        </div>
+        <StatCard
+          label="Active Stops"
+          value={targetCount.toString()}
+          sub="Total Bins"
+          color="text-slate-400"
+          icon="🗑️"
+        />
 
         {/* RECENT COLLECTIONS LOG */}
         {history.length > 0 && (
@@ -228,6 +217,35 @@ export default function EcoDashboard({
             </div>
           </div>
         )}
+
+        {/* MAP STYLE PICKER */}
+        <div className="mb-3 mt-3">
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">
+            Map Appearance
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            {styles.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setMapStyle(s.id)}
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all duration-300 ${
+                  mapStyle === s.id
+                    ? "bg-blue-50 border-blue-400 shadow-sm scale-[1.02]"
+                    : "bg-slate-50 border-slate-100 opacity-60 hover:opacity-100"
+                }`}
+              >
+                <span className="text-lg">{s.icon}</span>
+                <span
+                  className={`text-[8px] font-black uppercase ${
+                    mapStyle === s.id ? "text-blue-600" : "text-slate-500"
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Sticky Bottom Actions */}
@@ -264,7 +282,7 @@ export default function EcoDashboard({
 
 function StatCard({ label, value, sub, color, icon }: any) {
   return (
-    <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100 flex justify-between items-center">
+    <div className="bg-slate-50 mt-2 mb-1 p-4 rounded-[1.5rem] border border-slate-100 flex justify-between items-center">
       <div>
         <span className="block text-[9px] font-black text-slate-400 uppercase mb-1">
           {icon} {label}
