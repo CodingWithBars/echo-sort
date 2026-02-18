@@ -55,21 +55,25 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     abortRef.current = new AbortController();
 
     const GLOBAL_MAX_RANGE = 2500;
+    const MIN_FILL_THRESHOLD = 40;
 
-    // --- 1. RADIUS FILTER ---
+    // =========================================================
+    // 1. RADIUS FILTER
     let nearbyBins = bins.filter((b) => {
       if (!useFence) return true;
       const d = getDistance(driverPos, [b.lat, b.lng]);
       return d <= GLOBAL_MAX_RANGE || b.id === selectedBinId;
     });
 
-    if (!nearbyBins.length) return clearPath();
-
-    // --- 2. CLUSTER ---
+    // =========================================================
+    // 2. CLUSTER
     nearbyBins = clusterBins(nearbyBins, clusterRadius);
 
-    // --- 3. REMOVE EMPTY ---
-    nearbyBins = nearbyBins.filter((b) => b.fillLevel > 0);
+    // =========================================================
+    // 3. THRESHOLD FILTER (NEW LOGIC)
+    nearbyBins = nearbyBins.filter(
+      (b) => b.fillLevel >= MIN_FILL_THRESHOLD
+    );
 
     if (!nearbyBins.length) {
       clearPath();
@@ -78,26 +82,38 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     }
 
     // =========================================================
-    // 🧠 HUMAN-THINKING ROUTE BUILDER
+    // 🧠 SERVICE-FIRST ROUTE BUILDER
     // =========================================================
 
     let currentPos = driverPos;
     const route: [number, number][] = [driverPos];
     const remaining = [...nearbyBins];
 
-    while (remaining.length > 0) {
+    let accumulatedDistance = 0;
 
-      let bestIdx = 0;
+    while (remaining.length > 0) {
+      let bestIdx = -1;
       let bestScore = Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
         const candidate = remaining[i];
         const candidatePos: [number, number] = [candidate.lat, candidate.lng];
 
-        const score = humanScore(
+        const d = getDistance(currentPos, candidatePos);
+
+        // ---------- EARLY DETOUR PRUNING ----------
+        if (
+          accumulatedDistance > 0 &&
+          d / accumulatedDistance > maxDetour
+        ) {
+          continue;
+        }
+
+        const score = serviceScore(
           currentPos,
           candidatePos,
           candidate.fillLevel,
+          route,
           remaining,
           i
         );
@@ -108,9 +124,12 @@ export default function RoutingLayer(props: RoutingLayerProps) {
         }
       }
 
+      if (bestIdx === -1) break;
+
       const chosen = remaining.splice(bestIdx, 1)[0];
       const chosenPos: [number, number] = [chosen.lat, chosen.lng];
 
+      accumulatedDistance += getDistance(currentPos, chosenPos);
       route.push(chosenPos);
       currentPos = chosenPos;
     }
@@ -170,30 +189,51 @@ export default function RoutingLayer(props: RoutingLayerProps) {
     }
 
     // =========================================================
-    // 🧠 HUMAN SCORING ENGINE
-
-    function humanScore(
+    // 🧠 SERVICE-FIRST COST FUNCTION
+    function serviceScore(
       from: [number, number],
-      candidate: [number, number],
+      to: [number, number],
       fill: number,
+      route: [number, number][],
       all: any[],
       index: number
     ) {
-      const distance = getDistance(from, candidate);
+      const distance = getDistance(from, to);
 
-      // ---------- 1. FILL PRIORITY ----------
-      const fillReward = fill * 3;
+      // α Distance
+      const distanceCost = distance * 1.0;
 
-      // ---------- 2. CLUSTER REWARD ----------
+      // δ Fill priority
+      const fillReward = fill * 25;
+
+      // γ Cluster reward (service density)
       let cluster = 0;
       for (let j = 0; j < all.length; j++) {
         if (j === index) continue;
-        const d = getDistance(candidate, [all[j].lat, all[j].lng]);
-        if (d < 120) cluster++;
+        if (getDistance(to, [all[j].lat, all[j].lng]) < 120) cluster++;
       }
-      const clusterReward = cluster * 180;
+      const clusterReward = cluster * 200;
 
-      // ---------- 3. BACKTRACK RISK ----------
+      // ε Soft U-turn penalty (angle-based, never prohibitive)
+      let turnPenalty = 0;
+      if (route.length >= 2) {
+        const p1 = route[route.length - 2];
+        const p2 = route[route.length - 1];
+
+        const v1 = [p2[0] - p1[0], p2[1] - p1[1]];
+        const v2 = [to[0] - p2[0], to[1] - p2[1]];
+
+        const dot = v1[0] * v2[0] + v1[1] * v2[1];
+        const mag1 = Math.hypot(v1[0], v1[1]);
+        const mag2 = Math.hypot(v2[0], v2[1]);
+
+        if (mag1 && mag2) {
+          const angle = Math.acos(dot / (mag1 * mag2)) * 180 / Math.PI;
+          turnPenalty = angle * 4; // soft, U-turn allowed
+        }
+      }
+
+      // Backtracking penalty (centroid-based)
       let centroidLat = 0;
       let centroidLng = 0;
       all.forEach((b) => {
@@ -203,41 +243,20 @@ export default function RoutingLayer(props: RoutingLayerProps) {
       centroidLat /= all.length;
       centroidLng /= all.length;
 
-      const centroidDist = getDistance(candidate, [centroidLat, centroidLng]);
-      const backtrackPenalty = centroidDist * 0.4;
+      const backtrackPenalty =
+        getDistance(to, [centroidLat, centroidLng]) * 0.3;
 
-      // ---------- 4. FORWARD DIRECTION ----------
-      let directionPenalty = 0;
-      if (route.length >= 2) {
-        const prev = route[route.length - 1];
-        const prevPrev = route[route.length - 2];
-
-        const v1 = [prev[0] - prevPrev[0], prev[1] - prevPrev[1]];
-        const v2 = [candidate[0] - prev[0], candidate[1] - prev[1]];
-
-        const dot = v1[0]*v2[0] + v1[1]*v2[1];
-        const mag1 = Math.sqrt(v1[0]*v1[0] + v1[1]*v1[1]);
-        const mag2 = Math.sqrt(v2[0]*v2[0] + v2[1]*v2[1]);
-
-        if (mag1 && mag2) {
-          const angle = Math.acos(dot/(mag1*mag2)) * 180 / Math.PI;
-          directionPenalty = angle * 25; // punish sharp turns
-        }
-      }
-
-      // ---------- FINAL HUMAN SCORE ----------
       return (
-        distance * 1.0
-        + backtrackPenalty
-        + directionPenalty
-        - clusterReward
-        - fillReward
+        distanceCost +
+        backtrackPenalty +
+        turnPenalty -
+        clusterReward -
+        fillReward
       );
     }
 
     // =========================================================
     // HELPERS
-
     function clusterBins(list: any[], radius: number) {
       const clustered: any[] = [];
 
@@ -257,7 +276,6 @@ export default function RoutingLayer(props: RoutingLayerProps) {
 
       return clustered;
     }
-
   }, [
     map,
     driverPos,
