@@ -12,6 +12,8 @@ import CollectionsView from "@/components/admin/CollectionsView";
 import ViolationsView from "@/components/admin/ViolationsView"; 
 import ProfileView from "@/components/admin/ProfileView";
 
+export const dynamic = 'force-dynamic';
+
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
