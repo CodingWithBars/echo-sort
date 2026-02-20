@@ -144,9 +144,6 @@ export default function CollectionsView() {
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setSelectedBrgy(null)} />
           
           <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-4 duration-500">
-            {/* Mobile Handle */}
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
-            
             <div className={`h-1.5 w-full ${getStatusColor(selectedBrgy.status)}`} />
             
             <div className="p-6 md:p-8">
