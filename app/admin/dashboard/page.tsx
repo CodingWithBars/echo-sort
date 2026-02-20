@@ -19,6 +19,7 @@ export default function AdminDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [selectedCitizenData, setSelectedCitizenData] = useState<any | null>(null);
 
   const router = useRouter();
   const supabase = createClient();
@@ -36,6 +37,11 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleEditCitizenProfile = (citizen: any) => {
+    setSelectedCitizenData(citizen);
+    setActiveTab("profile");
+  };
+
   const menuItems = [
     { id: "overview", label: "Overview", icon: "📊" },
     { id: "drivers", label: "Driver Fleet", icon: "🚚" },
@@ -48,10 +54,17 @@ export default function AdminDashboard() {
     switch (activeTab) {
       case "overview": return <Overview />;
       case "drivers": return <DriversList />;
-      case "citizens": return <CitizenRegistry />;
+      case "citizens": 
+        return <CitizenRegistry onEditProfile={handleEditCitizenProfile} />;
       case "collections": return <CollectionsView />;
       case "violations": return <ViolationsView />;
-      case "profile": return <ProfileView />;
+      case "profile": 
+        return (
+          <ProfileView 
+            initialData={selectedCitizenData} 
+            onClearContext={() => setSelectedCitizenData(null)} 
+          />
+        );
       default: return <Overview />;
     }
   };

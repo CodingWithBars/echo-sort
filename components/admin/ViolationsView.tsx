@@ -1,143 +1,186 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function ViolationsView() {
-  const [filter, setFilter] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedViolation, setSelectedViolation] = useState<any | null>(null);
 
   const violations = [
     { 
-      id: "V-9012", 
-      citizen: "Juan Dela Cruz", 
-      type: "Illegal Dumping", 
-      location: "San Jose, Purok 4", 
-      date: "Feb 20, 2026", 
-      time: "02:15 PM", 
-      status: "Urgent",
-      evidence: "📸 View Photo"
-    },
-    { 
-      id: "V-9013", 
-      citizen: "Pedro Penduko", 
+      id: "V-901", 
+      barangay: "San Jose", 
       type: "Improper Segregation", 
-      location: "Santa Maria, Main St.", 
-      date: "Feb 20, 2026", 
-      time: "11:30 AM", 
+      date: "Feb 14, 2026", 
       status: "Pending",
-      evidence: "📸 View Photo"
+      involvedCitizen: "Ricardo Cruz",
+      description: "Mixed biodegradable with plastic recyclables. Second warning for this household.",
+      brgyTopContributor: { name: "Juan Dela Cruz", amount: "45kg" }
     },
     { 
-      id: "V-9014", 
-      citizen: "Maria Makiling", 
-      type: "Burning Waste", 
-      location: "Sto. Niño, Riverside", 
-      date: "Feb 19, 2026", 
-      time: "04:50 PM", 
+      id: "V-902", 
+      barangay: "Santa Maria", 
+      type: "Late Collection", 
+      date: "Feb 13, 2026", 
       status: "Resolved",
-      evidence: "📸 View Photo"
+      involvedCitizen: "Liza Soberano",
+      description: "Trash bins left out 4 hours after the truck passed. Resident informed of schedule.",
+      brgyTopContributor: { name: "Maria Clara", amount: "32kg" }
+    },
+    { 
+      id: "V-903", 
+      barangay: "Sto. Niño", 
+      type: "Illegal Dumping", 
+      date: "Feb 12, 2026", 
+      status: "Under Review",
+      involvedCitizen: "Unknown (CCTV Footage)",
+      description: "Commercial waste dumped at a residential collection point. Identifying vehicle plate.",
+      brgyTopContributor: { name: "Pedro Penduko", amount: "12kg" }
     },
   ];
 
-  const filtered = violations.filter(v => filter === "all" || v.status.toLowerCase() === filter);
+  useEffect(() => {
+    if (selectedViolation) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "unset";
+  }, [selectedViolation]);
+
+  const filteredViolations = violations.filter(v => {
+    const matchesStatus = filterStatus === "All" || v.status === filterStatus;
+    const matchesSearch = v.barangay.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          v.involvedCitizen.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Resolved': return 'bg-emerald-500 text-emerald-600';
+      case 'Under Review': return 'bg-amber-500 text-amber-600';
+      default: return 'bg-red-500 text-red-600';
+    }
+  };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       
-      {/* --- HEADER CONTROLS --- */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex gap-2 p-1.5 bg-white border border-slate-100 rounded-[2rem] shadow-sm">
-          {["All", "Urgent", "Pending", "Resolved"].map((tab) => (
+      {/* --- UNIFIED FILTER BAR --- */}
+      <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="relative flex-1 group">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">🔍</span>
+          <input 
+            type="text"
+            placeholder="Search barangay or citizen..."
+            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-transparent rounded-xl md:rounded-2xl text-xs font-bold outline-none focus:bg-white focus:border-emerald-500/20 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex gap-1 bg-slate-50 p-1 rounded-xl md:rounded-2xl overflow-x-auto scrollbar-hide">
+          {["All", "Pending", "Resolved"].map((status) => (
             <button
-              key={tab}
-              onClick={() => setFilter(tab.toLowerCase())}
-              className={`px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${
-                filter === tab.toLowerCase()
-                  ? "bg-red-500 text-white shadow-lg shadow-red-100"
-                  : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+              key={status}
+              onClick={() => setFilterStatus(status)}
+              className={`px-4 py-2 rounded-lg md:rounded-xl text-[9px] font-black transition-all uppercase tracking-widest whitespace-nowrap ${
+                filterStatus === status 
+                  ? "bg-slate-900 text-white shadow-lg" 
+                  : "text-slate-400 hover:text-slate-600"
               }`}
             >
-              {tab}
+              {status}
             </button>
           ))}
         </div>
-        
-        <div className="flex items-center gap-3 px-6 py-4 bg-orange-50 border border-orange-100 rounded-2xl">
-          <span className="animate-bounce">🔔</span>
-          <p className="text-[10px] font-black text-orange-700 uppercase tracking-tight">
-            3 New Reports requiring immediate review
-          </p>
-        </div>
       </div>
 
-      {/* --- VIOLATIONS LIST --- */}
-      <div className="grid grid-cols-1 gap-4">
-        {filtered.map((v) => (
+      {/* --- VIOLATION GRID --- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        {filteredViolations.map((v) => (
           <div 
             key={v.id} 
-            className="group bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all overflow-hidden"
+            onClick={() => setSelectedViolation(v)}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col group overflow-hidden transition-all hover:border-red-200 active:scale-[0.98] cursor-pointer"
           >
-            <div className="flex flex-col lg:flex-row lg:items-center">
-              
-              {/* STATUS & ID SECTION */}
-              <div className={`lg:w-48 p-8 flex flex-col justify-center items-center text-center border-b lg:border-b-0 lg:border-r border-slate-50 ${
-                v.status === 'Urgent' ? 'bg-red-50/30' : v.status === 'Resolved' ? 'bg-emerald-50/30' : 'bg-slate-50/30'
-              }`}>
-                <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest mb-3 ${
-                  v.status === 'Urgent' ? 'bg-red-500 text-white' : 
-                  v.status === 'Resolved' ? 'bg-emerald-500 text-white' : 'bg-slate-400 text-white'
-                }`}>
+            <div className={`h-1.5 w-full ${getStatusColor(v.status).split(' ')[0]}`} />
+            
+            <div className="p-5 flex flex-col h-full">
+              <div className="flex justify-between items-start mb-4">
+                <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider bg-opacity-10 ${getStatusColor(v.status)} bg-current`}>
                   {v.status}
                 </span>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{v.id}</p>
+                <span className="text-[10px] text-slate-400 font-bold font-mono uppercase">{v.id}</span>
               </div>
-
-              {/* MAIN INFO */}
-              <div className="flex-1 p-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+              
+              <h3 className="font-black text-slate-900 text-lg tracking-tight mb-1">
+                Brgy. {v.barangay}
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">{v.type}</p>
+              
+              <div className="mt-auto flex justify-between items-center">
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Violation Type</p>
-                  <h4 className="text-lg font-black text-slate-900 tracking-tight">{v.type}</h4>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs">👤</span>
-                    <span className="text-xs font-bold text-slate-600">{v.citizen}</span>
-                  </div>
+                  <p className="text-[8px] font-black text-slate-300 uppercase">Reported By</p>
+                  <p className="text-[10px] font-bold text-slate-700">{v.involvedCitizen}</p>
                 </div>
-
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Location & Time</p>
-                  <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                    <span className="text-emerald-500">📍</span> {v.location}
-                  </p>
-                  <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">
-                    {v.date} • {v.time}
-                  </p>
-                </div>
-
-                <button className="flex items-center justify-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl group-hover:bg-white group-hover:border-emerald-200 transition-all">
-                  <span className="text-xl">🖼️</span>
-                  <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Evidence Photo</span>
-                </button>
-              </div>
-
-              {/* ACTIONS */}
-              <div className="p-8 bg-slate-50/50 flex lg:flex-col gap-3 justify-center border-t lg:border-t-0 lg:border-l border-slate-100">
-                <button className="flex-1 lg:w-32 py-3 bg-white hover:bg-emerald-600 hover:text-white border border-slate-200 hover:border-emerald-600 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">
-                  Resolve
-                </button>
-                <button className="flex-1 lg:w-32 py-3 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">
-                  Dismiss
-                </button>
+                <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-xs group-hover:bg-red-50 group-hover:text-red-600 transition-colors">⚠️</div>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* --- EMPTY STATE --- */}
-      {filtered.length === 0 && (
-        <div className="py-32 text-center bg-white rounded-[3rem] border border-dashed border-slate-200">
-          <span className="text-5xl block mb-4">✨</span>
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-widest">All Clear</h3>
-          <p className="text-xs text-slate-400 font-bold mt-2 uppercase tracking-widest">No {filter} violations found in the system</p>
+      {/* --- DETAIL BOTTOM SHEET --- */}
+      {selectedViolation && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setSelectedViolation(null)} />
+          
+          <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-4 duration-500">
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
+            <div className={`h-1.5 w-full ${getStatusColor(selectedViolation.status).split(' ')[0]}`} />
+            
+            <div className="p-6 md:p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none mb-1">Incident Report</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedViolation.id} • {selectedViolation.date}</p>
+                </div>
+                <button onClick={() => setSelectedViolation(null)} className="p-2 bg-slate-50 text-slate-400 hover:text-slate-900 rounded-lg transition-colors">✕</button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Barangay</p>
+                    <p className="text-xs font-bold text-slate-800 uppercase">{selectedViolation.barangay}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Violation Type</p>
+                    <p className="text-xs font-bold text-slate-800 uppercase">{selectedViolation.type}</p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-red-50/50 rounded-xl border border-red-100 flex justify-between items-center">
+                  <div>
+                    <p className="text-[9px] font-black text-red-700 uppercase mb-1">Primary Subject</p>
+                    <p className="text-sm font-black text-red-900">{selectedViolation.involvedCitizen}</p>
+                  </div>
+                  <span className="text-lg">🆔</span>
+                </div>
+
+                <div className="p-5 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Incident Description</p>
+                  <p className="text-xs text-slate-600 leading-relaxed italic">"{selectedViolation.description}"</p>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button className="flex-1 py-4 bg-white text-slate-600 border border-slate-200 rounded-xl font-black text-[10px] tracking-widest uppercase hover:bg-slate-50 transition-all active:scale-95">
+                    Issue Warning
+                  </button>
+                  <button className="flex-[1.5] py-4 bg-emerald-600 text-white rounded-xl font-black text-[10px] tracking-widest uppercase shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">
+                    Mark as Resolved
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
