@@ -231,7 +231,7 @@ export default function RoutingLayer(props: RoutingLayerProps) {
           let cos = dot / (mag1 * mag2);
           cos = Math.max(-1, Math.min(1, cos)); // ⭐ clamp fix
           const angle = (Math.acos(cos) * 180) / Math.PI;
-          turnPenalty = Math.pow(angle / 45, 2) * 12;
+          turnPenalty = Math.pow(angle / 60, 2) * 9;
         }
       }
 

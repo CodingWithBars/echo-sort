@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation"; // Added router
 import dynamic from "next/dynamic";
+import { createClient } from "@/utils/supabase/client"; // Import Supabase client
 import CollectionHistory from "@/components/driver/CollectionHistory";
 import TruckStatus from "@/components/driver/TruckStatus";
 import ProfileView from "@/components/admin/ProfileView";
@@ -24,6 +26,23 @@ export default function DriverDashboard() {
   const [activeTab, setActiveTab] = useState("map");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false); // Added loading state for logout
+
+  const router = useRouter();
+  const supabase = createClient();
+
+  // --- LOGOUT LOGIC ---
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+      router.push("/login");
+      router.refresh(); // Clear any cached server components
+    } catch (error) {
+      console.error("Error logging out:", error);
+      setIsLoggingOut(false);
+    }
+  };
 
   const menuItems = [
     { id: "map", label: "Live Route Map", icon: "🗺️" },
@@ -34,7 +53,6 @@ export default function DriverDashboard() {
   const renderContent = () => {
     switch (activeTab) {
       case "map":
-        // We wrap the map in a container that fills 100% of the available area
         return (
           <div className="absolute inset-0 w-full h-full overflow-hidden">
             <DriverMap />
@@ -55,7 +73,6 @@ export default function DriverDashboard() {
     menuItems.find((item) => item.id === activeTab)?.label || "Driver Portal";
 
   return (
-    /* h-screen + overflow-hidden prevents the body from scrolling away from the map */
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
       {/* --- MOBILE SIDEBAR OVERLAY --- */}
       {isSidebarOpen && (
@@ -84,7 +101,6 @@ export default function DriverDashboard() {
           </div>
         </div>
 
-        {/* Added overflow-y-auto so the menu itself is scrollable if it gets long */}
         <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto">
           <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
             Driver Menu
@@ -125,9 +141,7 @@ export default function DriverDashboard() {
       </aside>
 
       {/* --- MAIN CONTENT AREA --- */}
-      {/* We use flex-col and overflow-hidden to ensure the map doesn't cause a page-scroll */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
-        {/* HEADER: shrink-0 ensures it stays its fixed height */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
             <button
@@ -164,7 +178,6 @@ export default function DriverDashboard() {
           </button>
         </header>
 
-        {/* CONTENT WRAPPER: This is the scrolling area for History/Status but fixed area for Map */}
         <div
           className={`flex-1 relative w-full h-full ${activeTab === "map" ? "overflow-hidden" : "overflow-y-auto p-6 lg:p-10"}`}
         >
@@ -177,7 +190,7 @@ export default function DriverDashboard() {
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
-            onClick={() => setShowLogoutModal(false)}
+            onClick={() => !isLoggingOut && setShowLogoutModal(false)}
           />
           <div className="relative w-full max-w-sm bg-white rounded-[3rem] p-10 shadow-2xl">
             <div className="text-center">
@@ -190,14 +203,16 @@ export default function DriverDashboard() {
               </p>
               <div className="space-y-3">
                 <button
-                  onClick={() => (window.location.href = "/login")}
-                  className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-emerald-100"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-emerald-100 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  Confirm & Logout
+                  {isLoggingOut ? "Ending Shift..." : "Confirm & Logout"}
                 </button>
                 <button
                   onClick={() => setShowLogoutModal(false)}
-                  className="w-full py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase"
+                  disabled={isLoggingOut}
+                  className="w-full py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all disabled:opacity-50"
                 >
                   Stay on Route
                 </button>

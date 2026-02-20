@@ -3,37 +3,48 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/client"; // Ensure this path is correct
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false); // Added for UX
   const router = useRouter();
+  const supabase = createClient();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
-    const setSession = (role: string) => {
-      document.cookie = `user-role=${role}; path=/; max-age=86400`;
-    };
+    // 1. Authenticate with Supabase
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    if (email === "admin@eco.com" && password === "admin123") {
-      setSession("ADMIN");
-      router.push("/admin/dashboard");
-    } 
-    else if (email === "driver1@eco.com" && password === "driver123") {
-      setSession("DRIVER");
-      router.push("/driver/dashboard");
-    } 
-    else if (email === "citizen@eco.com" && password === "citizen123") {
-      setSession("CITIZEN");
-      router.push("/citizen/schedule");
-    } 
-    else {
-      setError("Invalid email or password. Please check the test credentials.");
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
     }
+
+    // 2. Get user role from the metadata you set in Step 5
+    const role = data.user?.user_metadata?.role;
+
+    // 3. Route based on role
+    if (role === "ADMIN") {
+      router.push("/admin/dashboard");
+    } else if (role === "DRIVER") {
+      router.push("/driver/dashboard");
+    } else {
+      router.push("/citizen/schedule");
+    }
+    
+    // 4. Refresh to ensure middleware catches the new session
+    router.refresh();
   };
 
   return (
@@ -68,6 +79,7 @@ export default function LoginPage() {
             <input 
               type="email" 
               required
+              disabled={loading}
               className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none transition-all"
               placeholder="e.g., driver1@eco.com"
               onChange={(e) => setEmail(e.target.value)}
@@ -81,6 +93,7 @@ export default function LoginPage() {
               <input 
                 type={showPassword ? "text" : "password"} 
                 required
+                disabled={loading}
                 className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none transition-all"
                 placeholder="••••••••"
                 onChange={(e) => setPassword(e.target.value)}
@@ -93,14 +106,17 @@ export default function LoginPage() {
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.956 9.956 0 0112 5c4.478 0 8.268-2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
                 ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                 )}
               </button>
             </div>
           </div>
 
-          <button className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-[0.98] transition-all mt-2">
-            Sign In
+          <button 
+            disabled={loading}
+            className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-[0.98] transition-all mt-2 disabled:opacity-50"
+          >
+            {loading ? "Verifying..." : "Sign In"}
           </button>
         </form>
 
@@ -113,7 +129,6 @@ export default function LoginPage() {
             </Link>
           </p>
           
-          {/* Test Credentials Box */}
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Internal Test Access</p>
             <div className="space-y-1 text-[11px] font-mono text-slate-600">

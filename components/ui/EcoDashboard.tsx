@@ -143,9 +143,9 @@ export default function EcoDashboard({
           </div>
           <input
             type="range"
-            min="0"
+            min="1"
             max="800"
-            step="50"
+            step="5"
             value={maxDetour}
             onChange={(e) => setMaxDetour(parseInt(e.target.value))}
             className="w-full h-1.5 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"

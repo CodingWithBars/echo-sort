@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+
+// Views
 import Overview from "@/components/admin/Overview";
 import DriversList from "@/components/admin/DriverList";
 import CitizenRegistry from "@/components/admin/CitizenRegistry";
@@ -12,6 +16,23 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const router = useRouter();
+  const supabase = createClient();
+
+  // --- LOGOUT LOGIC ---
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+      router.replace("/login"); 
+      router.refresh(); 
+    } catch (error) {
+      console.error("Logout failed:", error);
+      setIsLoggingOut(false);
+    }
+  };
 
   const menuItems = [
     { id: "overview", label: "Overview", icon: "📊" },
@@ -33,116 +54,160 @@ export default function AdminDashboard() {
     }
   };
 
-  const currentLabel = activeTab === "profile" ? "Admin Profile" : (menuItems.find(item => item.id === activeTab)?.label || "Dashboard");
+  const currentLabel = menuItems.find(item => item.id === activeTab)?.label || "Dashboard";
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] font-sans relative">
+    <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
       
-      {/* --- SIDEBAR --- */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 lg:translate-x-0 lg:static
-        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
-      `}>
-        <div className="p-8">
+      {/* --- MOBILE SIDEBAR OVERLAY --- */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* --- SIDEBAR (Updated to Match Driver/Citizen Style) --- */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${
+          isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
+        }`}
+      >
+        <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
+            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100 border border-emerald-50">
               <span className="text-white font-black text-xl">E</span>
             </div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">EcoRoute</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              EcoRoute
+            </h1>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 mt-2">
-          <p className="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Main Menu</p>
+        <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto">
+          <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
+            System Admin
+          </p>
           {menuItems.map((item) => (
-            <button 
-              key={item.id} 
-              onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} 
-              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
-                activeTab === item.id 
-                ? "bg-emerald-50 text-emerald-700 font-bold" 
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveTab(item.id);
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-200 group ${
+                activeTab === item.id
+                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
-              <span className={`text-xl ${activeTab === item.id ? "grayscale-0" : "grayscale opacity-70 group-hover:grayscale-0"}`}>
+              <span className={`text-xl ${activeTab === item.id ? "brightness-200" : "grayscale opacity-70"}`}>
                 {item.icon}
-              </span> 
-              {item.label}
+              </span>
+              <span className="text-sm font-black uppercase tracking-tight">
+                {item.label}
+              </span>
             </button>
           ))}
         </nav>
 
-        <div className="p-6 mt-auto border-t border-slate-100">
-          <button 
+        <div className="p-6 shrink-0 border-t border-slate-50">
+          <button
             onClick={() => setShowLogoutModal(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all font-semibold"
+            className="w-full flex items-center justify-center gap-3 px-4 py-4 rounded-[2rem] bg-red-50 text-red-600 hover:bg-red-100 transition-all font-black text-xs uppercase tracking-widest border border-red-100"
           >
-            <span>Logout</span>
+            <span>Exit Portal</span>
           </button>
         </div>
       </aside>
 
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 sticky top-0 z-30">
+      {/* --- MAIN CONTENT AREA --- */}
+      <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        
+        {/* HEADER */}
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-600">☰</button>
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="lg:hidden p-3 bg-slate-50 text-slate-600 rounded-2xl border border-slate-100 active:scale-95 transition-transform"
+            >
+              ☰
+            </button>
             <div className="hidden sm:block">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Administrator</p>
-              <h2 className="text-lg font-bold text-slate-900">{currentLabel}</h2>
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
+                Admin Control
+              </p>
+              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
+                {currentLabel}
+              </h2>
             </div>
           </div>
 
-          {/* AVATAR BUTTON */}
-          <button 
+          <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-3 p-1 pr-4 rounded-full transition-all ${activeTab === 'profile' ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+            className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${
+              activeTab === "profile" 
+              ? "bg-emerald-50 border-emerald-200" 
+              : "bg-slate-50 border-slate-100 hover:border-slate-200"
+            }`}
           >
-            <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center text-slate-400 overflow-hidden">
-               <span className="text-lg">👤</span>
+            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-lg overflow-hidden">
+              👤
             </div>
             <div className="text-left hidden md:block">
-              <p className="text-xs font-black text-slate-900 leading-none mb-1">System Admin</p>
-              <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">View Profile</p>
+              <p className="text-[10px] font-black text-slate-900 leading-none">System Master</p>
+              <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">Super Admin</p>
             </div>
           </button>
         </header>
 
-        <div className="p-6 lg:p-10">
+        {/* CONTENT */}
+        <div className="flex-1 overflow-y-auto p-6 lg:p-10">
           <div className="mb-8">
-            <h3 className="text-3xl font-black text-slate-900 tracking-tight">{currentLabel}</h3>
+            <h3 className="text-3xl font-black text-slate-900 tracking-tight">
+              {currentLabel}
+            </h3>
           </div>
           {renderContent()}
         </div>
       </main>
 
-      {/* --- LOGOUT CONFIRMATION MODAL --- */}
+      {/* --- LOGOUT MODAL (Driver Style) --- */}
       {showLogoutModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowLogoutModal(false)} />
-          <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center text-3xl mb-6 mx-auto">👋</div>
-            <h2 className="text-2xl font-black text-slate-900 text-center tracking-tight mb-2">End Session?</h2>
-            <p className="text-slate-500 text-center text-sm font-medium mb-8">Are you sure you want to log out of the EcoRoute Admin portal?</p>
-            <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => window.location.href = '/login'}
-                className="w-full py-4 bg-red-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-200 hover:bg-red-600 transition-all active:scale-95"
-              >
-                Confirm Logout
-              </button>
-              <button 
-                onClick={() => setShowLogoutModal(false)}
-                className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-              >
-                Keep me logged in
-              </button>
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            onClick={() => !isLoggingOut && setShowLogoutModal(false)}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="text-center">
+              <span className="text-5xl block mb-4">🚪</span>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
+                End Admin Session?
+              </h2>
+              <p className="text-sm text-slate-500 mb-8">
+                You will need to re-authenticate to access the management portal.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="w-full py-5 bg-red-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-red-100 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {isLoggingOut ? "Closing..." : "Confirm & Logout"}
+                </button>
+                <button
+                  onClick={() => setShowLogoutModal(false)}
+                  disabled={isLoggingOut}
+                  className="w-full py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all disabled:opacity-50"
+                >
+                  Stay Logged In
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-
-      {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 lg:hidden" />}
     </div>
   );
 }
