@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { getDistance } from "./MapAssets";
+import { getDistance } from "../map/MapAssets";
 
 interface RoutingLayerProps {
   driverPos: [number, number] | null;

@@ -3,23 +3,39 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+// 1. Rename the import here
+import nextDynamic from "next/dynamic";
 
 // Views
 import Overview from "@/components/admin/Overview";
 import DriversList from "@/components/admin/DriverList";
 import CitizenRegistry from "@/components/admin/CitizenRegistry";
-import CollectionsView from "@/components/admin/CollectionsView"; 
-import ViolationsView from "@/components/admin/ViolationsView"; 
+import CollectionsView from "@/components/admin/CollectionsView";
+import ViolationsView from "@/components/admin/ViolationsView";
 import ProfileView from "@/components/admin/ProfileView";
 
-export const dynamic = 'force-dynamic';
+const DynamicBinMap = nextDynamic(
+  // Make sure this matches the actual filename in your folder!
+  () => import("@/components/admin/BinMapView"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[600px] w-full bg-slate-50 animate-pulse rounded-[2.5rem]" />
+    ),
+  },
+);
+
+// 3. This export is now safe because it doesn't conflict with 'nextDynamic'
+export const dynamic = "force-dynamic";
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [selectedCitizenData, setSelectedCitizenData] = useState<any | null>(null);
+  const [selectedCitizenData, setSelectedCitizenData] = useState<any | null>(
+    null,
+  );
 
   const router = useRouter();
   const supabase = createClient();
@@ -29,8 +45,8 @@ export default function AdminDashboard() {
     setIsLoggingOut(true);
     try {
       await supabase.auth.signOut();
-      router.replace("/login"); 
-      router.refresh(); 
+      router.replace("/login");
+      router.refresh();
     } catch (error) {
       console.error("Logout failed:", error);
       setIsLoggingOut(false);
@@ -44,6 +60,7 @@ export default function AdminDashboard() {
 
   const menuItems = [
     { id: "overview", label: "Overview", icon: "📊" },
+    { id: "map", label: "Bin Map", icon: "📍" },
     { id: "drivers", label: "Driver Fleet", icon: "🚚" },
     { id: "citizens", label: "Citizen Registry", icon: "👥" },
     { id: "collections", label: "Collections", icon: "♻️" },
@@ -52,28 +69,57 @@ export default function AdminDashboard() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case "overview": return <Overview />;
-      case "drivers": return <DriversList />;
-      case "citizens": 
-        return <CitizenRegistry onEditProfile={handleEditCitizenProfile} />;
-      case "collections": return <CollectionsView />;
-      case "violations": return <ViolationsView />;
-      case "profile": 
+      case "overview":
         return (
-          <ProfileView 
-            initialData={selectedCitizenData} 
-            onClearContext={() => setSelectedCitizenData(null)} 
-          />
+          <div className="p-6 lg:p-10">
+            <Overview />
+          </div>
         );
-      default: return <Overview />;
+      case "map":
+        return <DynamicBinMap />;
+      case "drivers":
+        return (
+          <div className="p-6 lg:p-10">
+            <DriversList />
+          </div>
+        );
+      case "citizens":
+        return (
+          <div className="p-6 lg:p-10 w-full">
+            <CitizenRegistry onEditProfile={handleEditCitizenProfile} />
+          </div>
+        );
+      case "collections":
+        return (
+          <div className="p-6 lg:p-10">
+            <CollectionsView />
+          </div>
+        );
+      case "violations":
+        return (
+          <div className="p-6 lg:p-10">
+            <ViolationsView />
+          </div>
+        );
+      case "profile":
+        return (
+          <div className="p-6 lg:p-10 w-full">
+            <ProfileView
+              initialData={selectedCitizenData}
+              onClearContext={() => setSelectedCitizenData(null)}
+            />
+          </div>
+        );
+      default:
+        return <Overview />;
     }
   };
 
-  const currentLabel = menuItems.find(item => item.id === activeTab)?.label || "Dashboard";
+  const currentLabel =
+    menuItems.find((item) => item.id === activeTab)?.label || "Dashboard";
 
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
-      
       {/* --- MOBILE SIDEBAR OVERLAY --- */}
       {isSidebarOpen && (
         <div
@@ -116,7 +162,9 @@ export default function AdminDashboard() {
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
-              <span className={`text-xl ${activeTab === item.id ? "brightness-200" : "grayscale opacity-70"}`}>
+              <span
+                className={`text-xl ${activeTab === item.id ? "brightness-200" : "grayscale opacity-70"}`}
+              >
                 {item.icon}
               </span>
               <span className="text-sm font-black uppercase tracking-tight">
@@ -138,7 +186,6 @@ export default function AdminDashboard() {
 
       {/* --- MAIN CONTENT AREA --- */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
-        
         {/* HEADER */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
@@ -148,11 +195,13 @@ export default function AdminDashboard() {
             >
               ☰
             </button>
-            <div className="hidden sm:block">
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
+
+            {/* This container now stays visible on mobile (removed 'hidden sm:block') */}
+            <div className="block">
+              <p className="text-[8px] md:text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
                 Admin Control
               </p>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
+              <h2 className="text-sm md:text-lg font-black text-slate-900 tracking-tight leading-tight">
                 {currentLabel}
               </h2>
             </div>
@@ -160,31 +209,28 @@ export default function AdminDashboard() {
 
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${
-              activeTab === "profile" 
-              ? "bg-emerald-50 border-emerald-200" 
-              : "bg-slate-50 border-slate-100 hover:border-slate-200"
+            className={`flex items-center gap-3 p-1 pr-1 md:pr-4 rounded-full border transition-all ${
+              activeTab === "profile"
+                ? "bg-emerald-50 border-emerald-200"
+                : "bg-slate-50 border-slate-100 hover:border-slate-200"
             }`}
           >
-            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-lg overflow-hidden">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-200 flex items-center justify-center text-sm md:text-lg overflow-hidden">
               👤
             </div>
             <div className="text-left hidden md:block">
-              <p className="text-[10px] font-black text-slate-900 leading-none">System Master</p>
-              <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">Super Admin</p>
+              <p className="text-[10px] font-black text-slate-900 leading-none">
+                System Master
+              </p>
+              <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">
+                Super Admin
+              </p>
             </div>
           </button>
         </header>
 
         {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto p-6 lg:p-10">
-          <div className="mb-8">
-            <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-              {currentLabel}
-            </h3>
-          </div>
-          {renderContent()}
-        </div>
+        <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       </main>
 
       {/* --- LOGOUT MODAL (Driver Style) --- */}
@@ -201,7 +247,8 @@ export default function AdminDashboard() {
                 End Admin Session?
               </h2>
               <p className="text-sm text-slate-500 mb-8">
-                You will need to re-authenticate to access the management portal.
+                You will need to re-authenticate to access the management
+                portal.
               </p>
               <div className="space-y-3">
                 <button

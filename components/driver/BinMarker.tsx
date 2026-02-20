@@ -2,7 +2,7 @@
 
 import { useMemo, useRef } from "react";
 import { Marker, Popup, Tooltip } from "react-leaflet";
-import { createBinIcon } from "./MapAssets";
+import { createBinIcon } from "../map/MapAssets";
 
 interface Bin {
   id: number;

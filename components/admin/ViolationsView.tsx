@@ -59,12 +59,12 @@ export default function ViolationsView() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Resolved":
-        return "bg-emerald-100 text-slate-950 border-emerald-200";
+        return "bg-emerald-500 text-slate-950 border-emerald-200";
       case "Under Review":
-        return "bg-amber-100 text-white border-amber-200";
+        return "bg-amber-500 text-amber-900 border-amber-300 font-black";
       case "Pending":
       default:
-        return "bg-red-100 text-slate-950 border-red-200";
+        return "bg-red-500 text-slate-950 border-red-200";
     }
   };
 
@@ -116,7 +116,7 @@ export default function ViolationsView() {
             <div className="p-5 flex flex-col h-full">
               <div className="flex justify-between items-start mb-4">
                 <span
-                  className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider bg-opacity-10 ${getStatusColor(v.status)} bg-current`}
+                  className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider border ${getStatusColor(v.status)}`}
                 >
                   {v.status}
                 </span>

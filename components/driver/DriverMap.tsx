@@ -7,7 +7,7 @@ import RoutingLayer from "./RoutingLayer";
 import BinMarker from "./BinMarker";
 import NavigationControls from "../ui/NavigationControls";
 import EcoDashboard from "../ui/EcoDashboard";
-import { LUPON_CENTER, getDistance } from "./MapAssets";
+import { LUPON_CENTER, getDistance } from "../map/MapAssets";
 import "leaflet/dist/leaflet.css";
 
 interface Bin {

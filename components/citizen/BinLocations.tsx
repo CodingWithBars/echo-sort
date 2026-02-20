@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
-import { LUPON_CENTER, getDistance } from "@/components/driver/MapAssets";
+import { LUPON_CENTER, getDistance } from "@/components/map/MapAssets";
 import BinMarker from "@/components/driver/BinMarker"; // Reuse your existing marker component
 import "leaflet/dist/leaflet.css";
 
