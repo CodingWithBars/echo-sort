@@ -4,29 +4,30 @@ import { useMemo, useRef } from "react";
 import { Marker, Popup, Tooltip } from "react-leaflet";
 import { createBinIcon } from "../map/MapAssets";
 
-// Standard interface for the Admin view
 interface Bin {
   id: number;
+  device_id: string;
   name: string;
   lat: number;
   lng: number;
   fillLevel: number;
+  battery_level?: number;
 }
 
 interface AdminBinMarkerProps {
   bin: Bin;
-  isSelected?: boolean;
-  onSelect?: (bin: Bin) => void;
-  onDelete?: (id: number) => void;
-  onMove?: (id: number, lat: number, lng: number) => void;
+  isSelected: boolean;
+  onSelect: (bin: Bin) => void;
+  onMove: (id: number, lat: number, lng: number) => void;
+  onDelete: (bin: Bin) => void; // Changed id: number to bin: Bin for better context
 }
 
-export default function AdminBinMarker({ 
-  bin, 
-  isSelected, 
-  onSelect, 
-  onDelete, 
-  onMove 
+export default function AdminBinMarker({
+  bin,
+  isSelected,
+  onSelect,
+  onDelete,
+  onMove,
 }: AdminBinMarkerProps) {
   const markerRef = useRef<any>(null);
 
@@ -36,15 +37,14 @@ export default function AdminBinMarker({
         const marker = markerRef.current;
         if (marker != null) {
           const { lat, lng } = marker.getLatLng();
-          // This allows admins to move the pin to a more accurate location
           onMove?.(bin.id, lat, lng);
         }
       },
       click() {
         onSelect?.(bin);
-      }
+      },
     }),
-    [bin, onMove, onSelect]
+    [bin, onMove, onSelect],
   );
 
   const isCritical = bin.fillLevel > 90;
@@ -54,56 +54,69 @@ export default function AdminBinMarker({
     <Marker
       position={[bin.lat, bin.lng]}
       icon={createBinIcon(bin.fillLevel, isSelected)}
-      draggable={true} // Admin always has power to move pins
+      draggable={true}
       eventHandlers={eventHandlers}
       ref={markerRef}
     >
-      <Tooltip 
-        permanent 
-        direction="top" 
-        offset={[0, -20]} 
+      <Tooltip
+        permanent
+        direction="top"
+        offset={[0, -20]}
         className="admin-label-tooltip"
       >
-        <div className={`flex items-center gap-2 px-3 py-1 rounded-full shadow-lg border-2 transition-all duration-300 ${
-          isSelected 
-            ? 'bg-slate-900 border-emerald-500 scale-110 z-[1001]' 
-            : 'bg-white border-slate-200'
-        }`}>
-          <span className={`font-black text-[9px] uppercase tracking-tighter ${
-            isSelected ? 'text-white' : 'text-slate-700'
-          }`}>
+        <div
+          className={`flex items-center gap-2 px-3 py-1 rounded-full shadow-lg border-2 transition-all duration-300 ${
+            isSelected
+              ? "bg-slate-900 border-emerald-500 scale-110 z-[1001]"
+              : "bg-white border-slate-200"
+          }`}
+        >
+          <span
+            className={`font-black text-[9px] uppercase tracking-tighter ${
+              isSelected ? "text-white" : "text-slate-700"
+            }`}
+          >
             {bin.name}
           </span>
-          <div className={`w-1.5 h-1.5 rounded-full ${
-            isCritical ? 'bg-red-500 animate-pulse' : 
-            isHighPriority ? 'bg-orange-500' : 'bg-emerald-500'
-          }`} />
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${
+              isCritical
+                ? "bg-red-500 animate-pulse"
+                : isHighPriority
+                  ? "bg-orange-500"
+                  : "bg-emerald-500"
+            }`}
+          />
         </div>
       </Tooltip>
 
       <Popup className="admin-popup">
         <div className="p-2 text-center min-w-[160px]">
           <div className="mb-3">
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-tight">{bin.name}</h3>
-            <p className="text-[9px] font-bold text-slate-400">CAPACITY: {bin.fillLevel}% FULL</p>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-tight">
+              {bin.name}
+            </h3>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+              {bin.fillLevel}% Full
+            </p>
           </div>
 
           <div className="space-y-1.5">
-            <button 
+            <button
               onClick={() => console.log("Manual Refresh Triggered")}
-              className="w-full py-2 bg-slate-100 text-slate-600 text-[9px] font-black uppercase rounded-lg hover:bg-slate-200 transition-all"
+              className="w-full py-2.5 bg-slate-100 text-slate-600 text-[9px] font-black uppercase rounded-xl hover:bg-slate-200 transition-all active:scale-95"
             >
               Ping Sensor
             </button>
-            
-            <button 
+
+            <button
               onClick={(e) => {
                 e.stopPropagation();
-                if(confirm("Permanently remove this station from the network?")) {
-                    onDelete?.(bin.id);
-                }
+                // REMOVED: window.confirm()
+                // JUST CALL: onDelete which now opens your custom modal
+                onDelete?.(bin);
               }}
-              className="w-full py-2 bg-red-50 text-red-600 text-[9px] font-black uppercase rounded-lg border border-red-100 hover:bg-red-500 hover:text-white transition-all shadow-sm"
+              className="w-full py-2.5 bg-red-50 text-red-600 text-[9px] font-black uppercase rounded-xl border border-red-100 hover:bg-red-500 hover:text-white transition-all shadow-sm active:scale-95"
             >
               Delete Station
             </button>

@@ -1,62 +1,116 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/utils/supabase/client";
 
-// 1. Define the Prop interface so TypeScript recognizes onEditProfile
-interface CitizenRegistryProps {
-  onEditProfile: (citizen: any) => void;
+const supabase = createClient();
+
+// --- TYPES ---
+interface Citizen {
+  id: string;
+  name: string;
+  barangay: string;
+  email: string | null;
+  violations: number;
+  created_at: string;
+  purok?: string;
+  is_archived: boolean; // Added for archive toggle
 }
 
-export default function CitizenRegistry({ onEditProfile }: CitizenRegistryProps) {
+interface CitizenDetail {
+  id: string;
+  barangay: string;
+  purok: string;
+}
+
+interface CitizenRegistryProps {
+  onEditProfile: (citizen: Citizen) => void;
+}
+
+export default function CitizenRegistry({
+  onEditProfile,
+}: CitizenRegistryProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBrgy, setFilterBrgy] = useState("All");
-  const [selectedCitizen, setSelectedCitizen] = useState<any | null>(null);
+  const [showArchived, setShowArchived] = useState(false); // Archive toggle state
+  const [selectedCitizen, setSelectedCitizen] = useState<Citizen | null>(null);
+  const [citizens, setCitizens] = useState<Citizen[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const citizens = [
-    {
-      id: "C-101",
-      name: "Juan Dela Cruz",
-      barangay: "San Jose",
-      violations: 0,
-      joined: "May 2025",
-      email: "juan.dc@email.com",
-    },
-    {
-      id: "C-102",
-      name: "Elena Ramos",
-      barangay: "Sto. Niño",
-      violations: 2,
-      joined: "Aug 2025",
-      email: "elena.r@email.com",
-    },
-    {
-      id: "C-103",
-      name: "Mateo Silva",
-      barangay: "Santa Maria",
-      violations: 1,
-      joined: "Jan 2026",
-      email: "mateo.s@email.com",
-    },
-    {
-      id: "C-104",
-      name: "Ricardo Cruz",
-      barangay: "San Jose",
-      violations: 3,
-      joined: "Nov 2025",
-      email: "rcruz@email.com",
-    },
-  ];
+  // --- 1. DATA FETCHING ---
+  const fetchCitizens = useCallback(async () => {
+    setIsLoading(true);
 
+    const [profilesRes, detailsRes] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, full_name, email, role, updated_at, is_archived")
+        .eq("role", "CITIZEN")
+        .eq("is_archived", showArchived) // Toggle based on button
+        .order("full_name", { ascending: true }),
+      supabase
+        .from("citizen_details")
+        .select("id, barangay, purok")
+    ]);
+
+    // DEBUG: Check if citizen_details is returning anything
+    console.log("Citizen Details Count:", detailsRes.data?.length);
+
+    if (profilesRes.error || detailsRes.error) {
+      console.error("❌ Error:", profilesRes.error?.message || detailsRes.error?.message);
+    } else if (profilesRes.data) {
+      const detailsMap = new Map<string, CitizenDetail>(
+        (detailsRes.data as CitizenDetail[])?.map((detail) => [detail.id, detail])
+      );
+
+      const flattenedData = profilesRes.data.map((profile: any) => {
+        const details = detailsMap.get(profile.id);
+        return {
+          id: profile.id,
+          name: profile.full_name || "Unknown Resident",
+          email: profile.email,
+          barangay: details?.barangay || "Unassigned",
+          purok: details?.purok || "N/A",
+          violations: 0,
+          created_at: profile.updated_at,
+          is_archived: profile.is_archived
+        };
+      });
+
+      setCitizens(flattenedData);
+    }
+    setIsLoading(false);
+  }, [showArchived]);
+
+  // --- 2. ARCHIVE/RESTORE LOGIC ---
+  const handleArchiveToggle = async (citizen: Citizen) => {
+    const action = citizen.is_archived ? "Restore" : "Archive";
+    const confirmed = confirm(`${action} ${citizen.name}?`);
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_archived: !citizen.is_archived })
+      .eq("id", citizen.id);
+
+    if (error) {
+      alert(`Failed to ${action.toLowerCase()} citizen.`);
+    } else {
+      setCitizens((prev) => prev.filter((c) => c.id !== citizen.id));
+      setSelectedCitizen(null);
+    }
+  };
+
+  // --- 3. EFFECTS ---
   useEffect(() => {
-    if (selectedCitizen) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "unset";
-  }, [selectedCitizen]);
+    fetchCitizens();
+  }, [fetchCitizens]);
 
   const filtered = citizens.filter(
     (c) =>
       (filterBrgy === "All" || c.barangay === filterBrgy) &&
       (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchTerm.toLowerCase())),
+        c.id.toString().toLowerCase().includes(searchTerm.toLowerCase())),
   );
 
   return (
@@ -64,142 +118,142 @@ export default function CitizenRegistry({ onEditProfile }: CitizenRegistryProps)
       {/* --- FILTER BAR --- */}
       <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-2xl md:rounded-[2rem] border border-slate-100 shadow-sm">
         <div className="relative flex-1 group">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
-            🔍
-          </span>
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
           <input
             type="text"
-            placeholder="Search citizen or ID..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-transparent rounded-xl md:rounded-2xl text-xs font-bold outline-none focus:bg-white focus:border-emerald-500/20 focus:ring-4 focus:ring-emerald-500/5 transition-all"
+            placeholder="Search resident..."
+            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-transparent rounded-xl md:rounded-2xl text-xs font-bold outline-none focus:bg-white focus:border-emerald-500/20 transition-all"
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        <div className="relative min-w-[160px]">
+        <div className="flex gap-2">
           <select
             value={filterBrgy}
             onChange={(e) => setFilterBrgy(e.target.value)}
-            className="w-full appearance-none px-4 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl md:rounded-2xl outline-none cursor-pointer hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+            className="appearance-none px-6 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl md:rounded-2xl outline-none cursor-pointer hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
           >
             <option value="All">All Barangays</option>
+            <option value="Ilangay">Ilangay</option>
             <option value="San Jose">San Jose</option>
-            <option value="Santa Maria">Santa Maria</option>
-            <option value="Sto. Niño">Sto. Niño</option>
+            <option value="Unassigned">Unassigned</option>
           </select>
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none text-[8px]">
-            ▼
-          </span>
+
+          {/* ARCHIVE TOGGLE BUTTON */}
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className={`px-6 py-3 rounded-xl md:rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              showArchived 
+                ? "bg-amber-100 text-amber-600 border border-amber-200" 
+                : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
+            }`}
+          >
+            {showArchived ? "📁 View Active" : "📂 View Archives"}
+          </button>
         </div>
       </div>
 
       {/* --- REGISTRY TABLE --- */}
       <div className="bg-white rounded-2xl md:rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-50 bg-slate-50/30">
-                <th className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Resident</th>
-                <th className="hidden md:table-cell px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Barangay</th>
-                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compliance</th>
-                <th className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.map((citizen) => (
-                <tr key={citizen.id} className="group hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 md:px-8 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs border border-white shadow-sm">👤</div>
-                      <div>
-                        <p className="text-sm font-black text-slate-900 leading-tight">{citizen.name}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{citizen.id}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="hidden md:table-cell px-6 py-4">
-                    <span className="text-xs font-bold text-slate-600">Brgy. {citizen.barangay}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${citizen.violations > 2 ? "bg-red-500" : citizen.violations > 0 ? "bg-amber-500" : "bg-emerald-500"} animate-pulse`} />
-                      <span className={`text-[10px] font-black ${citizen.violations > 0 ? "text-red-500" : "text-emerald-500"}`}>
-                        {citizen.violations} {citizen.violations === 1 ? "Violation" : "Violations"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 md:px-8 py-4 text-right">
-                    <button
-                      onClick={() => setSelectedCitizen(citizen)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-900 hover:text-white rounded-lg md:rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
-                    >
-                      Details
-                    </button>
-                  </td>
+        {isLoading ? (
+          <div className="py-20 text-center space-y-4">
+            <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mx-auto" />
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Syncing Data...</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-50 bg-slate-50/30">
+                  <th className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Resident</th>
+                  <th className="hidden md:table-cell px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Location</th>
+                  <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {filtered.map((citizen) => (
+                  <tr key={citizen.id} className="group hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 md:px-8 py-4">
+                      <p className="text-sm font-black text-slate-900 leading-tight">{citizen.name}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">ID-{citizen.id.slice(0, 8)}</p>
+                    </td>
+                    <td className="hidden md:table-cell px-6 py-4 text-xs font-bold text-slate-600">
+                      {citizen.barangay === "Unassigned" ? (
+                        <span className="text-amber-500 underline decoration-dotted">Missing Details</span>
+                      ) : (
+                        `Brgy. ${citizen.barangay}`
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${citizen.is_archived ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+                        <span className={`text-[10px] font-black uppercase ${citizen.is_archived ? 'text-slate-400' : 'text-emerald-500'}`}>
+                          {citizen.is_archived ? "Archived" : "Active"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 md:px-8 py-4 text-right">
+                      <button
+                        onClick={() => setSelectedCitizen(citizen)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-900 hover:text-white rounded-xl text-[9px] font-black uppercase transition-all"
+                      >
+                        Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* --- MODAL --- */}
+      {/* --- DETAILS MODAL --- */}
       {selectedCitizen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setSelectedCitizen(null)} />
-          <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-4 duration-500 ease-out">
-            <div className={`h-1.5 w-full ${selectedCitizen.violations > 0 ? "bg-red-500" : "bg-emerald-500"}`} />
-            <div className="p-6 md:p-8">
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-slate-50 flex items-center justify-center text-2xl border border-slate-100">👤</div>
-                  <div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none mb-1">{selectedCitizen.name}</h2>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedCitizen.id}</p>
-                  </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSelectedCitizen(null)} />
+          <div className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={`h-1.5 w-full ${selectedCitizen.is_archived ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+            <div className="p-8">
+              <div className="flex justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">{selectedCitizen.name}</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Resident Profile</p>
                 </div>
-                <button onClick={() => setSelectedCitizen(null)} className="p-2 bg-slate-50 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all active:scale-90">✕</button>
+                <button onClick={() => setSelectedCitizen(null)} className="text-slate-400 hover:text-slate-900">✕</button>
               </div>
 
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Barangay</p>
+                  <div className="p-4 bg-slate-50 rounded-2xl">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Barangay</p>
                     <p className="text-xs font-bold text-slate-800">{selectedCitizen.barangay}</p>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Join Date</p>
-                    <p className="text-xs font-bold text-slate-800">{selectedCitizen.joined}</p>
+                  <div className="p-4 bg-slate-50 rounded-2xl">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Purok</p>
+                    <p className="text-xs font-bold text-slate-800">{selectedCitizen.purok}</p>
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">Email Address</p>
-                    <p className="text-xs font-bold text-slate-800">{selectedCitizen.email}</p>
-                  </div>
-                  <span className="text-lg opacity-40">✉️</span>
-                </div>
-
-                <div className={`p-5 rounded-xl border ${selectedCitizen.violations > 0 ? "bg-red-50/50 border-red-100" : "bg-emerald-50/50 border-emerald-100"}`}>
-                  <p className={`text-[10px] font-black uppercase mb-1 tracking-widest ${selectedCitizen.violations > 0 ? "text-red-700" : "text-emerald-700"}`}>Compliance Summary</p>
-                  <p className={`text-sm font-black tracking-tight ${selectedCitizen.violations > 0 ? "text-red-900" : "text-emerald-900"}`}>
-                    {selectedCitizen.violations === 0 ? "✓ Registered Eco-Champion" : `⚠️ ${selectedCitizen.violations} Violations Tracked`}
-                  </p>
-                </div>
-
-                {/* --- CONNECTED ACTION BUTTONS --- */}
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-4">
+                  {!selectedCitizen.is_archived && (
+                    <button
+                      className="flex-1 py-4 bg-white text-slate-600 border border-slate-200 rounded-xl font-black text-[10px] uppercase hover:bg-slate-50 transition-all"
+                      onClick={() => { onEditProfile(selectedCitizen); setSelectedCitizen(null); }}
+                    >
+                      Edit Profile
+                    </button>
+                  )}
                   <button
-                    className="flex-1 py-4 bg-white text-slate-600 border border-slate-200 rounded-xl font-black text-[10px] tracking-widest uppercase hover:bg-slate-50 transition-all active:scale-95"
-                    onClick={() => {
-                      onEditProfile(selectedCitizen); // 2. Trigger the navigation prop
-                      setSelectedCitizen(null);        // 3. Close the modal
-                    }}
+                    onClick={() => handleArchiveToggle(selectedCitizen)}
+                    className={`flex-1 py-4 border rounded-xl font-black text-[10px] uppercase transition-all ${
+                      selectedCitizen.is_archived
+                        ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white"
+                        : "bg-red-50 text-red-600 border-red-100 hover:bg-red-600 hover:text-white"
+                    }`}
                   >
-                    Edit Profile
-                  </button>
-                  <button className="flex-[1.5] py-4 bg-slate-900 text-white rounded-xl font-black text-[10px] tracking-widest uppercase shadow-lg shadow-slate-200 hover:bg-emerald-600 transition-all active:scale-95">
-                    Contact Citizen
+                    {selectedCitizen.is_archived ? "Restore Resident" : "Archive Resident"}
                   </button>
                 </div>
               </div>
