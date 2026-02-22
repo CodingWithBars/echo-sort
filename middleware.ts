@@ -2,8 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  // 1. Initialize the response early
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
 
+  // 2. Setup Supabase Client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -22,46 +26,65 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // 1. Get the authenticated user
+  // 3. Get the authenticated user
   const { data: { user } } = await supabase.auth.getUser();
-  const userRole = user?.user_metadata?.role;
   const { pathname } = request.nextUrl;
 
+  // FETCH ROLE: Check metadata first, fallback to Profiles table
+  let userRole = user?.user_metadata?.role;
+
+  if (user && !userRole) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    userRole = profile?.role;
+  }
+
   // --- SECURITY HEADERS ---
-  // This prevents the browser from storing a "snapshot" of private pages.
-  // When the user hits 'Back' after logging out, they will be forced to re-fetch and hit this middleware.
   supabaseResponse.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
-  supabaseResponse.headers.set('Pragma', 'no-cache');
 
-  // 2. Redirect authenticated users away from Login/Register
-  // Prevents the "Back button to login" confusion
+  // 4. Redirect authenticated users away from Auth pages (/login, /register)
   if (user && (pathname === "/login" || pathname === "/register")) {
-    if (userRole === "ADMIN") return NextResponse.redirect(new URL("/admin/dashboard", request.url));
-    if (userRole === "DRIVER") return NextResponse.redirect(new URL("/driver/dashboard", request.url));
-    return NextResponse.redirect(new URL("/citizen/schedule", request.url));
+    let dashPath = "/citizen/schedule";
+    if (userRole === "ADMIN") dashPath = "/admin/dashboard";
+    if (userRole === "DRIVER") dashPath = "/driver/dashboard";
+    
+    return NextResponse.redirect(new URL(dashPath, request.url));
   }
 
-  // 3. Protect Admin Routes
-  if (pathname.startsWith("/admin") && userRole !== "ADMIN") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  // 5. PROTECTED ROUTE LOGIC
+  const isAdminPath = pathname.startsWith("/admin");
+  const isDriverPath = pathname.startsWith("/driver");
+  const isCitizenPath = pathname.startsWith("/citizen");
 
-  // 4. Protect Driver Routes
-  if (pathname.startsWith("/driver") && userRole !== "DRIVER") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  if (isAdminPath || isDriverPath || isCitizenPath) {
+    // If not logged in at all, go to login
+    if (!user) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
 
-  // 5. Protect Citizen Routes (Optional, but recommended)
-  if (pathname.startsWith("/citizen") && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+    // ADMIN ROUTE PROTECTION
+    if (isAdminPath && userRole !== "ADMIN") {
+      // If they are logged in but NOT an admin, send them to their rightful dashboard
+      const fallback = userRole === "DRIVER" ? "/driver/dashboard" : "/citizen/schedule";
+      return NextResponse.redirect(new URL(fallback, request.url));
+    }
 
-  // 6. Final catch-all for unauthenticated users on protected paths
-  if (!user && (pathname.startsWith("/admin") || pathname.startsWith("/driver") || pathname.startsWith("/citizen"))) {
-    const loginUrl = new URL("/login", request.url);
-    // Optional: add a "next" param to redirect them back after they log in
-    // loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    // DRIVER ROUTE PROTECTION
+    if (isDriverPath && userRole !== "DRIVER") {
+      const fallback = userRole === "ADMIN" ? "/admin/dashboard" : "/citizen/schedule";
+      return NextResponse.redirect(new URL(fallback, request.url));
+    }
+
+    // CITIZEN ROUTE PROTECTION (Strict)
+    // We allow ADMINS to see citizen paths for management/testing
+    if (isCitizenPath && userRole !== "CITIZEN" && userRole !== "ADMIN") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
   }
 
   return supabaseResponse;
@@ -69,13 +92,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (svg, png, etc)
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
