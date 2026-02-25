@@ -28,7 +28,7 @@ export default function InstallPWA() {
 
     // Wait for the user to respond to the prompt
     const { outcome } = await deferredPrompt.userChoice;
-
+    
     if (outcome === "accepted") {
       console.log("EcoRoute was installed!");
     }
@@ -44,18 +44,15 @@ export default function InstallPWA() {
     <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-80 z-50">
       <div className="bg-white border border-emerald-100 shadow-2xl rounded-2xl p-4 flex items-center justify-between animate-bounce-subtle">
         <div className="flex items-center gap-3">
-          <div className="mb-8 flex h-12 w-12 items-center justify-center bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] overflow-hidden">
-              <img
-                src="/icons/icon-512x512.png"
-                alt="EcoRoute Logo"
-                className="h-full w-full object-cover p-5"
-              />
-            </div>
+          <div className="bg-emerald-500 p-2 rounded-lg">
+             {/* Simple Truck/Eco Icon */}
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
           <div>
             <p className="text-sm font-bold text-gray-900">Install EcoRoute</p>
-            <p className="text-xs text-gray-500">
-              Access Your Personal Waste Management Dashboard
-            </p>
+            <p className="text-xs text-gray-500">Access Your Personal Waste Management Dashboard</p>
           </div>
         </div>
         <button

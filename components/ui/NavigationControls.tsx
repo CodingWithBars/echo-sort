@@ -1,19 +1,25 @@
 "use client";
 
 interface NavProps {
-  isEditMode: boolean;
-  setIsEditMode: (val: boolean) => void;
+  // Made these optional with "?" to fix the TypeScript error
+  isEditMode?: boolean;
+  setIsEditMode?: (val: boolean) => void;
   isNavMode: boolean;
   setIsNavMode: (val: boolean) => void;
   heading: number;
 }
 
-export default function NavigationControls({ isEditMode, setIsEditMode, isNavMode, setIsNavMode, heading }: NavProps) {
+export default function NavigationControls({ 
+  isEditMode = false, 
+  setIsEditMode, 
+  isNavMode, 
+  setIsNavMode, 
+  heading 
+}: NavProps) {
   return (
-    /* Reduced top margin and horizontal spacing */
     <div className="absolute top-4 left-4 right-4 z-[1000] flex justify-between items-start pointer-events-none">
       
-      {/* BRAND LOGO - Compacted padding and font size */}
+      {/* BRAND LOGO */}
       <div className="bg-white/80 backdrop-blur-md px-3 py-2 rounded-2xl shadow-lg border border-white pointer-events-auto">
         <h1 className="text-sm font-black text-emerald-600 tracking-tighter uppercase italic leading-none">
           EcoRoute
@@ -26,18 +32,22 @@ export default function NavigationControls({ isEditMode, setIsEditMode, isNavMod
         )}
       </div>
 
-      {/* ACTION BUTTONS - Scaled down from p-4 to p-2.5 */}
+      {/* ACTION BUTTONS */}
       <div className="flex flex-col gap-2 pointer-events-auto">
-        <button
-          onClick={() => setIsEditMode(!isEditMode)}
-          className={`p-2.5 rounded-full shadow-lg transition-all border-[3px] flex items-center justify-center w-10 h-10 ${
-            isEditMode 
-              ? "bg-red-500 text-white border-red-200 rotate-90" 
-              : "bg-white text-emerald-600 border-emerald-50 active:bg-slate-50"
-          }`}
-        >
-          {isEditMode ? <span className="text-xs font-bold">✕</span> : <span className="text-sm">⚙️</span>}
-        </button>
+        
+        {/* Only show Edit/Settings button if setIsEditMode is provided (Admin Mode) */}
+        {setIsEditMode && (
+          <button
+            onClick={() => setIsEditMode(!isEditMode)}
+            className={`p-2.5 rounded-full shadow-lg transition-all border-[3px] flex items-center justify-center w-10 h-10 ${
+              isEditMode 
+                ? "bg-red-500 text-white border-red-200 rotate-90" 
+                : "bg-white text-emerald-600 border-emerald-50 active:bg-slate-50"
+            }`}
+          >
+            {isEditMode ? <span className="text-xs font-bold">✕</span> : <span className="text-sm">⚙️</span>}
+          </button>
+        )}
 
         <button
           onClick={() => setIsNavMode(!isNavMode)}

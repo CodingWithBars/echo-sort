@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 
+// --- Types ---
 interface CollectionLog {
   id: number;
   name: string;
@@ -9,65 +10,27 @@ interface CollectionLog {
 }
 
 interface DashboardProps {
+  bins: any[]; 
+  history: CollectionLog[];
+  eta: { dist: string; time: string };
+  isTracking: boolean;
+  onStartTracking: () => void;
+  onStopTracking: () => void;
+  onRefresh: () => void;
+  onClearHistory?: () => void;
   routingMode: "fastest" | "priority";
   setRoutingMode: (m: "fastest" | "priority") => void;
   maxDetour: number;
   setMaxDetour: (v: number) => void;
   useFence: boolean;
   setUseFence: (v: boolean) => void;
-
-  // ⭐ NEW PROP
-  currentBin?: { name: string; distance: string };
-
-  nextBin: { name: string; distance: string };
-  eta: { dist: string; time: string };
-  targetCount: number;
-  driverPos: any;
-
-  isTracking: boolean;
-  onStartTracking: () => void;
-  onStopTracking: () => void;
-  onRefresh: () => void;
-
-  history?: CollectionLog[];
-  onClearHistory?: () => void;
-
   mapStyle: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12";
-  setMapStyle: (
-    s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12",
-  ) => void;
+  setMapStyle: (s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12") => void;
 }
 
-export default function EcoDashboard({
-  routingMode,
-  setRoutingMode,
-  maxDetour,
-  setMaxDetour,
-  useFence,
-  setUseFence,
-
-  currentBin, // ⭐ NEW
-
-  nextBin,
-  eta,
-  targetCount,
-  driverPos,
-  isTracking,
-  onStartTracking,
-  onStopTracking,
-  onRefresh,
-  history = [],
-  onClearHistory,
-  mapStyle,
-  setMapStyle,
-}: DashboardProps) {
+export default function EcoDashboard(props: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const styles: { id: typeof mapStyle; label: string; icon: string }[] = [
-    { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
-    { id: "navigation-night-v1", label: "Night", icon: "🌙" },
-    { id: "outdoors-v12", label: "Terrain", icon: "🏔️" },
-  ];
+  const { bins, eta, history, isTracking, onRefresh, routingMode, mapStyle } = props;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -75,188 +38,54 @@ export default function EcoDashboard({
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
+  // Logic to count bins needing collection
+  const activeStops = bins.filter(b => b.fillLevel >= 40).length;
+
   return (
-    <div className="flex flex-col h-[85vh] md:h-screen bg-white">
+    <div className="flex flex-col h-full bg-white">
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
-        {/* MODE + FENCE */}
-        <div className="flex justify-between items-center mb-6 gap-2">
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-            <button
-              onClick={() => setRoutingMode("fastest")}
-              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                routingMode === "fastest"
-                  ? "bg-white text-emerald-600 shadow-sm"
-                  : "text-slate-400"
-              }`}
-            >
-              🍃 Efficient
-            </button>
-            <button
-              onClick={() => setRoutingMode("priority")}
-              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                routingMode === "priority"
-                  ? "bg-white text-orange-500 shadow-sm"
-                  : "text-slate-400"
-              }`}
-            >
-              ⚠️ Urgent
-            </button>
-          </div>
-
-          <button
-            onClick={() => setUseFence(!useFence)}
-            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${
-              useFence
-                ? "bg-blue-50 border-blue-200 text-blue-600"
-                : "bg-slate-50 border-slate-200 text-slate-400"
-            }`}
-          >
-            {useFence ? "🛡️ Fence: ON" : "🌍 Global"}
-          </button>
-        </div>
-
-        {/* ROUTE SUMMARY */}
-        <div
-          className={`p-6 rounded-[2rem] text-white shadow-lg text-center border-[3px] transition-all duration-500 ${
-            routingMode === "priority"
-              ? "bg-orange-500 border-orange-400"
-              : "bg-emerald-600 border-emerald-500"
-          }`}
-        >
-          <span className="block text-[10px] font-black opacity-80 uppercase mb-1">
-            Total Route distance
-          </span>
-          <span className="block text-3xl font-black">{eta.dist}</span>
-          <hr className="opacity-20 my-2" />
-          <span className="text-sm font-bold">⏱️ EST. {eta.time}</span>
-        </div>
-
-        {/* DETOUR */}
-        <div className="mt-3 mb-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-[10px] font-black text-slate-500 uppercase">
-              Detour Range
-            </span>
-            <span className="text-[10px] font-black text-emerald-600 bg-white px-2 py-0.5 rounded border">
-              +{maxDetour}m
-            </span>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="800"
-            step="5"
-            value={maxDetour}
-            onChange={(e) => setMaxDetour(parseInt(e.target.value))}
-            className="w-full h-1.5 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-          />
-          <p className="text-[8px] font-bold text-slate-400 mt-2 uppercase">
-            Filters bins by trip effort
-          </p>
-        </div>
-
-        {/* ⭐ CURRENT BIN CARD */}
-        {currentBin && (
-          <StatCard
-            label="Current Station"
-            value={currentBin.name}
-            sub={currentBin.distance}
-            color="text-blue-600"
-            icon="🚚"
-          />
-        )}
-
-        {/* NEXT BIN */}
-        <StatCard
-          label="Next Station"
-          value={nextBin.name}
-          sub={nextBin.distance}
-          color="text-emerald-600"
-          icon="📍"
+        
+        {/* Top Controls */}
+        <ModeSelector 
+          mode={routingMode} 
+          setMode={props.setRoutingMode} 
+          useFence={props.useFence} 
+          setUseFence={props.setUseFence} 
         />
 
-        <StatCard
-          label="Active Stops"
-          value={targetCount.toString()}
-          sub="Total Bins"
-          color="text-slate-400"
-          icon="🗑️"
-        />
+        {/* Big Route Card */}
+        <RouteSummary eta={eta} mode={routingMode} />
 
-        {/* RECENT COLLECTIONS LOG */}
-        {history.length > 0 && (
-          <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex justify-between items-center mb-3 px-1">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                Recent Collections
-              </span>
-              <button
-                onClick={onClearHistory}
-                className="text-[8px] font-black text-red-400 uppercase hover:text-red-600 transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="space-y-2">
-              {history.map((log, i) => (
-                <div
-                  key={`${log.id}-${i}`}
-                  className="flex items-center justify-between bg-white border border-slate-100 p-3 rounded-xl shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs">✅</span>
-                    <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight">
-                      {log.name}
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400">
-                    {log.time}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Detour Config */}
+        <DetourSlider value={props.maxDetour} onChange={props.setMaxDetour} />
 
-        {/* MAP STYLE PICKER */}
-        <div className="mb-3 mt-3">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">
-            Map Appearance
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            {styles.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setMapStyle(s.id)}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all duration-300 ${
-                  mapStyle === s.id
-                    ? "bg-blue-50 border-blue-400 shadow-sm scale-[1.02]"
-                    : "bg-slate-50 border-slate-100 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <span className="text-lg">{s.icon}</span>
-                <span
-                  className={`text-[8px] font-black uppercase ${
-                    mapStyle === s.id ? "text-blue-600" : "text-slate-500"
-                  }`}
-                >
-                  {s.label}
-                </span>
-              </button>
-            ))}
-          </div>
+        {/* Status Cards */}
+        <div className="space-y-3 mb-6">
+          <StatCard 
+            label="Active Stops" 
+            value={activeStops.toString()} 
+            sub="Bins > 40%" 
+            color="text-emerald-600" 
+            icon="🗑️" 
+          />
         </div>
+
+        {/* Log Section */}
+        <CollectionHistory history={history} onClear={props.onClearHistory} />
+
+        {/* Visual Settings */}
+        <StylePicker current={mapStyle} setStyle={props.setMapStyle} />
       </div>
 
-      {/* Sticky Bottom Actions */}
-      <div className="p-5 pt-4 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-24">
+      {/* Persistent Action Footer */}
+      <div className="p-5 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-8">
         <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
           <button
-            onClick={isTracking ? onStopTracking : onStartTracking}
-            className={`w-full py-4 md:py-5 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border ${
-              isTracking
-                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100 shadow-sm"
-                : "bg-blue-600 text-white shadow-lg shadow-blue-200 border-blue-500 hover:bg-blue-700"
+            onClick={isTracking ? props.onStopTracking : props.onStartTracking}
+            className={`w-full py-4 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border-[3px] ${
+              isTracking 
+                ? "bg-red-50 text-red-600 border-red-100 shadow-inner" 
+                : "bg-blue-600 text-white shadow-xl shadow-blue-100 border-blue-500"
             }`}
           >
             {isTracking ? "🛑 Stop Tracking" : "🚀 Launch Tracking"}
@@ -265,14 +94,14 @@ export default function EcoDashboard({
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`w-full py-3 md:py-4 rounded-[1.8rem] font-black text-[10px] uppercase flex justify-center items-center gap-2 transition-all active:scale-95 ${
-              isRefreshing
-                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait"
-                : "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 shadow-sm"
+            className={`w-full py-3 rounded-[1.8rem] font-black text-[10px] uppercase flex justify-center items-center gap-2 border transition-all ${
+              isRefreshing 
+                ? "bg-slate-50 text-slate-400 border-slate-100" 
+                : "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
             }`}
           >
             <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
-            {isRefreshing ? "Optimizing Path..." : "Recalculate Path"}
+            {isRefreshing ? "Optimizing..." : "Recalculate Path"}
           </button>
         </div>
       </div>
@@ -280,16 +109,120 @@ export default function EcoDashboard({
   );
 }
 
+// --- Sub-Components ---
+
+function ModeSelector({ mode, setMode, useFence, setUseFence }: any) {
+  return (
+    <div className="flex justify-between items-center mb-6 gap-2">
+      <div className="flex bg-slate-100 p-1 rounded-2xl w-fit">
+        <button 
+          onClick={() => setMode("fastest")} 
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${mode === "fastest" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}
+        >
+          🍃 Fast
+        </button>
+        <button 
+          onClick={() => setMode("priority")} 
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${mode === "priority" ? "bg-white text-orange-500 shadow-sm" : "text-slate-400"}`}
+        >
+          ⚠️ Priority
+        </button>
+      </div>
+      <button 
+        onClick={() => setUseFence(!useFence)} 
+        className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase border-2 transition-all ${useFence ? "bg-blue-50 border-blue-100 text-blue-600" : "bg-slate-50 border-slate-200 text-slate-400"}`}
+      >
+        {useFence ? "🛡️ Fenced" : "🌍 Global"}
+      </button>
+    </div>
+  );
+}
+
+function RouteSummary({ eta, mode }: any) {
+  return (
+    <div className={`p-8 rounded-[2.5rem] text-white shadow-2xl shadow-emerald-100 text-center border-[4px] transition-all mb-6 ${mode === "priority" ? "bg-orange-500 border-orange-400" : "bg-emerald-600 border-emerald-500"}`}>
+      <span className="block text-[10px] font-black opacity-70 uppercase tracking-widest mb-1">Total Trip</span>
+      <span className="block text-4xl font-black">{eta.dist}</span>
+      <div className="h-[1px] bg-white/20 w-12 mx-auto my-3" />
+      <span className="text-sm font-bold bg-white/10 px-4 py-1 rounded-full backdrop-blur-sm">⏱️ {eta.time}</span>
+    </div>
+  );
+}
+
+function DetourSlider({ value, onChange }: any) {
+  return (
+    <div className="mb-6 bg-slate-50 p-5 rounded-[1.8rem] border border-slate-100">
+      <div className="flex justify-between items-center mb-4">
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Detour Range</span>
+        <span className="text-[10px] font-black text-emerald-600 bg-white px-3 py-1 rounded-full border border-emerald-50">+{value}m</span>
+      </div>
+      <input 
+        type="range" min="50" max="800" step="50" 
+        value={value} 
+        onChange={(e) => onChange(parseInt(e.target.value))} 
+        className="w-full h-2 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500" 
+      />
+    </div>
+  );
+}
+
+function CollectionHistory({ history, onClear }: any) {
+  if (history.length === 0) return null;
+  return (
+    <div className="mb-8">
+      <div className="flex justify-between items-center mb-3 px-1">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Stops</span>
+        {onClear && (
+          <button onClick={onClear} className="text-[9px] font-black text-red-400 uppercase hover:underline">Clear</button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {history.slice(0, 3).map((log: any, i: number) => (
+          <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-100 p-4 rounded-2xl shadow-sm">
+            <span className="text-[11px] font-black text-slate-700">🚛 {log.name}</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">{log.time}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StylePicker({ current, setStyle }: any) {
+  const styles = [
+    { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
+    { id: "navigation-night-v1", label: "Night", icon: "🌙" },
+    { id: "outdoors-v12", label: "Terrain", icon: "🏔️" },
+  ];
+  return (
+    <div className="mb-4">
+      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Map View</span>
+      <div className="grid grid-cols-3 gap-3">
+        {styles.map((s) => (
+          <button 
+            key={s.id} 
+            onClick={() => setStyle(s.id as any)} 
+            className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${current === s.id ? "bg-blue-50 border-blue-400 shadow-md scale-105" : "bg-white border-slate-100 opacity-60 hover:opacity-100"}`}
+          >
+            <span className="text-xl">{s.icon}</span>
+            <span className="text-[9px] font-black uppercase">{s.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub, color, icon }: any) {
   return (
-    <div className="bg-slate-50 mt-2 mb-1 p-4 rounded-[1.5rem] border border-slate-100 flex justify-between items-center">
+    <div className="bg-slate-50 p-5 rounded-[1.8rem] border border-slate-100 flex justify-between items-center">
       <div>
-        <span className="block text-[9px] font-black text-slate-400 uppercase mb-1">
-          {icon} {label}
-        </span>
-        <span className="block text-lg font-black text-slate-800">{value}</span>
+        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-1">{icon} {label}</span>
+        <span className="block text-xl font-black text-slate-800 tracking-tight">{value}</span>
       </div>
-      <span className={`text-xs font-black ${color}`}>{sub}</span>
+      <div className="text-right">
+        <span className={`text-[10px] font-black uppercase ${color}`}>{sub}</span>
+      </div>
     </div>
   );
 }
