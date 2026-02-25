@@ -44,16 +44,13 @@ export default function InstallPWA() {
     <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-80 z-50">
       <div className="bg-white border border-emerald-100 shadow-2xl rounded-2xl p-4 flex items-center justify-between animate-bounce-subtle">
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-500 p-2 rounded-lg">
-            {/* Simple Truck/Eco Icon */}
-            <div className="mb-8 flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] overflow-hidden">
+          <div className="mb-8 flex h-12 w-12 items-center justify-center bg-white shadow-[0_0_50px_rgba(0,0,0,0.2)] overflow-hidden">
               <img
                 src="/icons/icon-512x512.png"
                 alt="EcoRoute Logo"
                 className="h-full w-full object-cover p-5"
               />
             </div>
-          </div>
           <div>
             <p className="text-sm font-bold text-gray-900">Install EcoRoute</p>
             <p className="text-xs text-gray-500">
