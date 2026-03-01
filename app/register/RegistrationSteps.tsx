@@ -206,9 +206,9 @@ export function Step2({
   // Specific Validation States
   const isMuniValid = !!formData.municipality;
   const isBrgyValid = !!formData.barangay;
-  const isStreetValid = formData.address.trim().length > 0;
+  const isStreetValid = true;
   const isPurokValid = formData.purok.trim().length > 0;
-  const isHouseValid = formData.houseLotNumber.trim().length > 0;
+  const isHouseValid = true;
 
   const isValid =
     isMuniValid && isBrgyValid && isStreetValid && isPurokValid && isHouseValid;
@@ -279,11 +279,11 @@ export function Step2({
           Street / Sitio
         </label>
         <input
-          className={`${getInputClass(formData.address)} ${showErrors && !isStreetValid ? "border-red-400 bg-red-50/30" : ""}`}
+          className={`${getInputClass(formData.address_street)} ${showErrors && !isStreetValid ? "border-red-400 bg-red-50/30" : ""}`}
           placeholder="e.g. Magsaysay St."
-          value={formData.address}
+          value={formData.address_street}
           onChange={(e) =>
-            setFormData({ ...formData, address: e.target.value })
+            setFormData({ ...formData, address_street: e.target.value })
           }
         />
         {showErrors && !isStreetValid && (
@@ -312,11 +312,11 @@ export function Step2({
             House #
           </label>
           <input
-            className={`${getInputClass(formData.houseLotNumber)} ${showErrors && !isHouseValid ? "border-red-400 bg-red-50/30" : ""}`}
+            className={`${getInputClass(formData.house_lot_number)} ${showErrors && !isHouseValid ? "border-red-400 bg-red-50/30" : ""}`}
             placeholder="Lot/Blk"
-            value={formData.houseLotNumber}
+            value={formData.house_lot_number}
             onChange={(e) =>
-              setFormData({ ...formData, houseLotNumber: e.target.value })
+              setFormData({ ...formData, house_lot_number: e.target.value })
             }
           />
           {showErrors && !isHouseValid && <ErrorLabel text="Required | N/A" />}

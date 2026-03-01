@@ -29,24 +29,23 @@ export default function CitizenRegister() {
     municipality: "",
     barangay: "",
     purok: "",
-    address: "",
-    houseLotNumber: "",
+    address_street: "",
+    house_lot_number: "",
     serviceType: "General",
   });
 
   const handleRegistration = async () => {
     setError("");
-
-    // 1. Client-side Validation
     if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match. Please check again.");
+      setError("Passwords do not match. Please check again!");
       return;
     }
 
     setShowTerms(false);
     setLoading(true);
 
-    const fullName = `${formData.firstName} ${formData.middleName ? formData.middleName + " " : ""}${formData.lastName}${formData.nameExt ? " " + formData.nameExt : ""}`;
+    const fullName =
+      `${formData.firstName} ${formData.middleName ? formData.middleName + " " : ""}${formData.lastName}${formData.nameExt ? " " + formData.nameExt : ""}`.trim();
 
     const { error: authError } = await supabase.auth.signUp({
       email: formData.email,
@@ -55,11 +54,11 @@ export default function CitizenRegister() {
         data: {
           full_name: fullName,
           role: "CITIZEN",
-          municipality: formData.municipality,
-          barangay: formData.barangay,
-          purok: formData.purok,
-          address_street: formData.address,
-          house_lot_number: formData.houseLotNumber,
+          municipality: formData.municipality || "Lupon",
+          barangay: formData.barangay || "Unassigned",
+          purok: formData.purok || "N/A",
+          address_street: formData.address_street || "N/A",
+          house_lot_number: formData.house_lot_number || "N/A",
           contact_number: formData.contactNumber,
         },
       },
@@ -70,7 +69,7 @@ export default function CitizenRegister() {
       setLoading(false);
     } else {
       setLoading(false);
-      setIsSuccess(true); // Show success message instead of redirecting immediately
+      setIsSuccess(true);
     }
   };
 
