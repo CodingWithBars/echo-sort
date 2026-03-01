@@ -53,7 +53,8 @@ export default function AdminBinMarker({
   return (
     <Marker
       position={[bin.lat, bin.lng]}
-      icon={createBinIcon(bin.fillLevel, isSelected)}
+      // Pass 'true' for isMini to hide the internal percentage pill from the MapAsset
+      icon={createBinIcon(bin.fillLevel, isSelected, bin.battery_level, true)}
       draggable={true}
       eventHandlers={eventHandlers}
       ref={markerRef}
@@ -61,23 +62,44 @@ export default function AdminBinMarker({
       <Tooltip
         permanent
         direction="top"
-        offset={[0, -20]}
+        offset={[0, -20]} // Back to a standard offset
         className="admin-label-tooltip"
       >
         <div
-          className={`flex items-center gap-2 px-3 py-1 rounded-full shadow-lg border-2 transition-all duration-300 ${
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full shadow-xl border-2 transition-all duration-300 ${
             isSelected
               ? "bg-slate-900 border-emerald-500 scale-110 z-[1001]"
-              : "bg-white border-slate-200"
+              : "bg-white border-slate-100"
           }`}
         >
+          {/* BIN NAME */}
           <span
-            className={`font-black text-[9px] uppercase tracking-tighter ${
+            className={`font-black text-[10px] uppercase tracking-tight ${
               isSelected ? "text-white" : "text-slate-700"
             }`}
           >
             {bin.name}
           </span>
+
+          {/* VERTICAL DIVIDER */}
+          <div
+            className={`w-[1px] h-3 ${isSelected ? "bg-white/20" : "bg-slate-200"}`}
+          />
+
+          {/* PERCENTAGE LEVEL */}
+          <span
+            className={`font-black text-[10px] ${
+              isCritical
+                ? "text-red-500"
+                : isHighPriority
+                  ? "text-orange-500"
+                  : "text-emerald-500"
+            }`}
+          >
+            {bin.fillLevel}%
+          </span>
+
+          {/* STATUS DOT */}
           <div
             className={`w-1.5 h-1.5 rounded-full ${
               isCritical

@@ -135,8 +135,15 @@ export default function AdminDashboard() {
         return (
           <div className="p-6 lg:p-10 w-full">
             <ProfileView
+              key={selectedCitizenData?.id || "admin"} // Important: Force re-render on ID change
               initialData={selectedCitizenData}
-              onClearContext={() => setSelectedCitizenData(null)}
+              onClearContext={() => {
+                setSelectedCitizenData(null);
+                // If we were editing a citizen, jump back to the registry tab
+                if (selectedCitizenData) {
+                  setActiveTab("citizens");
+                }
+              }}
             />
           </div>
         );
@@ -231,35 +238,69 @@ export default function AdminDashboard() {
 
           {/* DYNAMIC PROFILE BADGE */}
           <button
-            onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-3 p-1 pr-1 md:pr-4 rounded-full border transition-all duration-300 ${
+            onClick={() => {
+              if (typeof setSelectedCitizenData === "function")
+                setSelectedCitizenData(null);
+              setActiveTab("profile");
+            }}
+            className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.5rem] border transition-all duration-500 group/badge ${
               activeTab === "profile"
-                ? "bg-emerald-50 border-emerald-200 shadow-sm"
-                : "bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50"
+                ? "bg-slate-950 border-slate-900 shadow-[0_10px_20px_-5px_rgba(0,0,0,0.2)]"
+                : "bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"
             }`}
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-100 flex items-center justify-center text-sm md:text-lg overflow-hidden border border-slate-200 relative">
+            {/* Avatar Container with Glass Effect */}
+            <div
+              className={`w-9 h-9 md:w-11 md:h-11 rounded-xl flex items-center justify-center overflow-hidden border relative transition-all duration-500 ${
+                activeTab === "profile"
+                  ? "border-emerald-500/50 scale-105"
+                  : "border-slate-200"
+              }`}
+            >
               {adminProfile?.avatar_url ? (
                 <img
                   src={adminProfile.avatar_url}
                   alt="Admin"
-                  className="w-full h-full object-cover animate-in fade-in duration-500"
+                  className="w-full h-full object-cover"
                 />
               ) : (
-                <span className="font-black text-emerald-700 italic">
-                  {adminProfile?.full_name?.charAt(0) || "👤"}
-                </span>
+                <div className="w-full h-full bg-emerald-600 flex items-center justify-center">
+                  <span className="font-black text-white italic text-base">
+                    {adminProfile?.full_name?.charAt(0) || "A"}
+                  </span>
+                </div>
+              )}
+              {/* Inner Glow for active state */}
+              {activeTab === "profile" && (
+                <div className="absolute inset-0 bg-emerald-500/10 animate-pulse" />
               )}
             </div>
 
+            {/* Identity Labels */}
             <div className="text-left hidden md:block">
-              <p className="text-[10px] font-black text-slate-900 leading-none uppercase tracking-tight">
-                {adminProfile?.full_name || "Loading..."}
+              <p
+                className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${
+                  activeTab === "profile" ? "text-white" : "text-slate-900"
+                }`}
+              >
+                {adminProfile?.full_name || "System Admin"}
               </p>
-              <div className="flex items-center gap-1 mt-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-                  {adminProfile?.role || "Administrator"}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                    activeTab === "profile"
+                      ? "bg-emerald-400"
+                      : "bg-emerald-500"
+                  }`}
+                />
+                <p
+                  className={`text-[8px] font-bold uppercase tracking-[0.15em] transition-colors duration-300 ${
+                    activeTab === "profile"
+                      ? "text-emerald-400/80"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {adminProfile?.role || "Authorized"}
                 </p>
               </div>
             </div>

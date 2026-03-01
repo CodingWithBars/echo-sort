@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { 
+  // ... your other existing icons like Camera, ShieldCheck, etc.
+  Search, 
+  ChevronDown,
+  User,
+  Archive
+} from "lucide-react";
 
 const supabase = createClient();
 
@@ -135,43 +142,63 @@ export default function CitizenRegistry({
         </div>
       </div>
 
-      {/* --- FILTER BAR --- */}
-      <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
-        <div className="relative flex-1 group">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
-          <input
-            type="text"
-            placeholder="Search resident name or ID..."
-            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-transparent rounded-2xl text-xs font-bold outline-none focus:bg-white focus:border-emerald-500/20 transition-all"
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+      {/* --- UNIFIED FILTER BAR --- */}
+<div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-[2.5rem] border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.03)] items-stretch">
+  
+  {/* SEARCH BLOCK */}
+  <div className="relative flex-1 group h-14 md:h-16">
+    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+      <Search size={18} />
+    </div>
+    <input
+      type="text"
+      placeholder="Search resident name or ID..."
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+      className="w-full h-full pl-14 pr-6 bg-slate-50 border border-transparent rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-emerald-500/20 focus:ring-4 focus:ring-emerald-500/5 transition-all placeholder:text-slate-300"
+    />
+  </div>
 
-        <div className="flex gap-2">
-          <select
-            value={filterBrgy}
-            onChange={(e) => setFilterBrgy(e.target.value)}
-            className="appearance-none px-6 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl outline-none cursor-pointer hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-          >
-            <option value="All">All Barangays</option>
-            {uniqueBarangays.map((brgy) => (
-              <option key={brgy} value={brgy}>{brgy}</option>
-            ))}
-            <option value="Unassigned">Unassigned</option>
-          </select>
+  <div className="flex gap-2 h-14 md:h-16">
+    {/* BARANGAY SELECT */}
+    <div className="relative min-w-[180px] h-full group">
+      <select
+        value={filterBrgy}
+        onChange={(e) => setFilterBrgy(e.target.value)}
+        className="w-full h-full appearance-none px-8 pr-12 bg-slate-950 text-white text-[10px] font-black uppercase tracking-[0.15em] rounded-[1.8rem] outline-none cursor-pointer hover:bg-slate-800 transition-all duration-300 shadow-xl shadow-slate-200/50"
+      >
+        <option value="All">All Barangays</option>
+        {uniqueBarangays.map((brgy) => (
+          <option key={brgy} value={brgy}>{brgy}</option>
+        ))}
+        <option value="Unassigned">Unassigned</option>
+      </select>
+      <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none" size={16} strokeWidth={3} />
+    </div>
 
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              showArchived
-                ? "bg-amber-100 text-amber-600 border border-amber-200"
-                : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
-            }`}
-          >
-            {showArchived ? "📁 Active List" : "📂 View Archives"}
-          </button>
-        </div>
-      </div>
+    {/* ARCHIVE TOGGLE BUTTON */}
+    <button
+      onClick={() => setShowArchived(!showArchived)}
+      className={`h-full px-8 rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-3 active:scale-95 shadow-lg ${
+        showArchived
+          ? "bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600"
+          : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100 shadow-emerald-100/20"
+      }`}
+    >
+      {showArchived ? (
+        <>
+          <User size={16} strokeWidth={3} />
+          <span>Active List</span>
+        </>
+      ) : (
+        <>
+          <Archive size={16} strokeWidth={3} />
+          <span>View Archives</span>
+        </>
+      )}
+    </button>
+  </div>
+</div>
 
       {/* --- REGISTRY GRID --- */}
       <div className="w-full">

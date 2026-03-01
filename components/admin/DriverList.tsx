@@ -4,6 +4,10 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Toaster, toast } from "react-hot-toast";
 import {
+  // ... your other existing icons like Camera, ShieldCheck, etc.
+  Search,
+} from "lucide-react";
+import {
   createDriverAccount,
   archiveDriverAccount,
   restoreDriverAccount,
@@ -152,30 +156,52 @@ export default function DriversList() {
         </button>
       </div>
 
-      {/* Tab Switcher */}
-      <div className="flex bg-slate-100 p-1.5 rounded-[2rem] w-fit mb-6">
-        <button
-          onClick={() => setActiveTab("ACTIVE")}
-          className={`px-8 py-3 rounded-[1.8rem] font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === "ACTIVE" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}
-        >
-          Active Fleet
-        </button>
-        <button
-          onClick={() => setActiveTab("REMOVED")}
-          className={`px-8 py-3 rounded-[1.8rem] font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === "REMOVED" ? "bg-white text-red-500 shadow-sm" : "text-slate-400"}`}
-        >
-          Archived
-        </button>
-      </div>
+      {/* --- UNIFIED FLEET SEARCH & NAVIGATION --- */}
+      <div className="flex flex-col lg:flex-row gap-3 bg-white p-3 rounded-[2.5rem] border-2 border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.03)] items-stretch">
+        {/* SEARCH BLOCK - Massive Rounded Style */}
+        <div className="relative flex-1 group h-14 md:h-16">
+          <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+            <Search size={18} strokeWidth={3} />
+          </div>
+          <input
+            type="text"
+            placeholder="Search driver or plate number..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-full pl-14 pr-6 bg-slate-50 border-2 border-transparent rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 ring-emerald-500/5 transition-all placeholder:text-slate-300"
+          />
+        </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-        <input
-          type="text"
-          placeholder="Search driver or plate..."
-          className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+        {/* TAB SWITCHER BLOCK - Aligned to Search Height */}
+        <div className="flex bg-slate-100 p-1.5 rounded-[2rem] shadow-inner items-stretch">
+          <button
+            onClick={() => setActiveTab("ACTIVE")}
+            className={`px-8 md:px-10 rounded-[1.6rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all duration-300 flex items-center gap-2 ${
+              activeTab === "ACTIVE"
+                ? "bg-white text-emerald-600 shadow-md transform scale-[1.02]"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${activeTab === "ACTIVE" ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}
+            />
+            <span>Active Fleet</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("REMOVED")}
+            className={`px-8 md:px-10 rounded-[1.6rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all duration-300 flex items-center gap-2 ${
+              activeTab === "REMOVED"
+                ? "bg-white text-red-500 shadow-md transform scale-[1.02]"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${activeTab === "REMOVED" ? "bg-red-500 animate-pulse" : "bg-slate-300"}`}
+            />
+            <span>Archived</span>
+          </button>
+        </div>
       </div>
 
       {/* Grid */}
