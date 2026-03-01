@@ -1,88 +1,131 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { createClient } from "@/utils/supabase/client";
 
-// Placeholder components - You'll create these similar to your admin/driver components
-const BinLocations = dynamic(() => import("@/components/citizen/BinLocations"), { 
+// Dynamic Views
+const BinLocations = nextDynamic(() => import("@/components/citizen/BinLocations"), { 
   ssr: false,
-  loading: () => <div className="h-full w-full bg-slate-100 animate-pulse rounded-3xl" />
+  loading: () => <div className="h-[600px] w-full bg-slate-50 animate-pulse rounded-[3rem]" />
 });
-const PickupSchedule = () => <div className="p-8 bg-white rounded-3xl border border-slate-100 shadow-sm"> Pickup Schedule Coming Soon...</div>;
-const MyImpact = () => <div className="p-8 bg-white rounded-3xl border border-slate-100 shadow-sm"> Your Eco-Impact Stats...</div>;
-const ReportIssue = () => <div className="p-8 bg-white rounded-3xl border border-slate-100 shadow-sm"> Report a Waste Issue...</div>;
-const ProfileView = () => <div className="p-8 bg-white rounded-3xl border border-slate-100 shadow-sm"> Citizen Profile Settings...</div>;
+
+// Placeholder Components
+const PickupSchedule = () => <div className="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm animate-in slide-in-from-bottom-4 duration-500">🗓️ Collection Schedule for your Barangay...</div>;
+const MyImpact = () => <div className="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm animate-in slide-in-from-bottom-4 duration-500">🌱 Your Eco-Warrior Stats...</div>;
+const ReportIssue = () => <div className="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm animate-in slide-in-from-bottom-4 duration-500">📢 Report a Waste Concern...</div>;
+const CitizenProfileView = ({ initialData }: any) => <div className="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm">👤 Settings for {initialData?.full_name}...</div>;
+
+export const dynamic = "force-dynamic";
+
+interface CitizenProfile {
+  id: string;
+  full_name: string;
+  avatar_url?: string | null;
+  role: string;
+  citizen_details: {
+    barangay: string;
+    purok: string;
+    municipality: string;
+  };
+}
 
 export default function CitizenDashboard() {
   const [activeTab, setActiveTab] = useState("bins");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [profile, setProfile] = useState<CitizenProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const router = useRouter();
   const supabase = createClient();
 
+  useEffect(() => {
+    const fetchFullProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(`
+            id, 
+            full_name, 
+            avatar_url, 
+            role,
+            citizen_details!inner (
+              barangay,
+              purok,
+              municipality
+            )
+          `)
+          .eq("id", user.id)
+          .single();
+
+        if (!error && data) {
+          setProfile(data as any);
+        }
+      } else {
+        router.replace("/login");
+      }
+      setIsLoading(false);
+    };
+
+    fetchFullProfile();
+  }, [supabase, router]);
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
-    try {
-      await supabase.auth.signOut();
-      router.replace("/login"); // Crucial: replace to prevent back-button loops
-      router.refresh();
-    } catch (error) {
-      console.error("Error logging out:", error);
-      setIsLoggingOut(false);
-    }
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
   };
 
   const menuItems = [
     { id: "bins", label: "Bin Locations", icon: "📍" },
-    { id: "schedule", label: "Pickup Schedule", icon: "🗓️" },
+    { id: "schedule", label: "Schedule", icon: "🗓️" },
     { id: "impact", label: "My Impact", icon: "🌱" },
     { id: "report", label: "Report Issue", icon: "📢" },
   ];
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case "bins": return <div className="absolute inset-0"><BinLocations /></div>;
-      case "schedule": return <PickupSchedule />;
-      case "impact": return <MyImpact />;
-      case "report": return <ReportIssue />;
-      case "profile": return <ProfileView />;
-      default: return <BinLocations />;
-    }
-  };
+  const currentLabel = menuItems.find((item) => item.id === activeTab)?.label || "Community Portal";
 
-  const currentLabel = menuItems.find((item) => item.id === activeTab)?.label || "Citizen Portal";
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Syncing Profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
       
-      {/* SIDEBAR OVERLAY */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden" onClick={() => setIsSidebarOpen(false)} />
-      )}
-
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
-        <div className="p-8">
+        <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
-              <span className="text-white font-black text-xl">E</span>
+            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100 border border-emerald-50">
+              <span className="text-white font-black text-xl italic">E</span>
             </div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">EcoRoute</h1>
           </div>
         </div>
 
         <nav className="flex-1 px-4 space-y-2 mt-2">
-          <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Community Menu</p>
+          <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic opacity-70">Citizen Portal</p>
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-200 ${
-                activeTab === item.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 group ${
+                activeTab === item.id 
+                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold" 
+                  : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
               }`}
             >
               <span className="text-xl">{item.icon}</span>
@@ -91,35 +134,83 @@ export default function CitizenDashboard() {
           ))}
         </nav>
 
-        <div className="p-6">
-          <button onClick={() => setShowLogoutModal(true)} className="w-full flex items-center justify-center gap-3 px-4 py-4 rounded-[2rem] bg-slate-50 text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all font-black text-xs uppercase tracking-widest border border-slate-100">
-            <span>Sign Out</span>
+        <div className="p-6 shrink-0">
+          <button onClick={() => setShowLogoutModal(true)} className="w-full py-4 rounded-[2rem] bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all font-black text-xs uppercase tracking-widest border border-slate-100">
+            Sign Out
           </button>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        
+        {/* DASHBOARD HEADER */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-3 bg-slate-50 text-slate-600 rounded-2xl border border-slate-100">☰</button>
-            <div>
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">Eco-Citizen</p>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{currentLabel}</h2>
+            <div className="block">
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
+                {profile?.citizen_details.barangay}, {profile?.citizen_details.municipality}
+              </p>
+              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight uppercase italic">{currentLabel}</h2>
             </div>
           </div>
 
-          <button onClick={() => setActiveTab("profile")} className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${activeTab === "profile" ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-100"}`}>
-            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg">👤</div>
-            <div className="text-left hidden sm:block">
-              <p className="text-[10px] font-black text-slate-900 leading-none">My Account</p>
-              <p className="text-[8px] text-emerald-600 font-bold uppercase mt-1">Level 5 Contributor</p>
+          {/* DYNAMIC PROFILE BADGE */}
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.8rem] border transition-all duration-500 group/badge ${
+              activeTab === "profile" 
+                ? "bg-slate-950 border-slate-900 shadow-xl" 
+                : "bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"
+            }`}
+          >
+            <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border relative transition-all duration-500 ${
+              activeTab === "profile" ? "border-emerald-500/50 scale-105" : "border-slate-200"
+            }`}>
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-emerald-600 flex items-center justify-center">
+                  <span className="font-black text-white italic text-base">
+                    {profile?.full_name?.charAt(0) || "C"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="text-left hidden md:block">
+              <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${
+                activeTab === "profile" ? "text-white" : "text-slate-900"
+              }`}>
+                {profile?.full_name || "Valued Citizen"}
+              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${
+                  activeTab === "profile" ? "text-emerald-400/80" : "text-slate-400"
+                }`}>
+                  {profile?.citizen_details.purok} • Authorized
+                </p>
+              </div>
             </div>
           </button>
         </header>
 
-        <div className={`flex-1 relative w-full h-full ${activeTab === "bins" ? "overflow-hidden" : "overflow-y-auto p-6 lg:p-10"}`}>
-          {renderContent()}
+        {/* VIEW RENDERER */}
+        <div className={`flex-1 relative w-full h-full ${activeTab === "bins" ? "overflow-hidden" : "overflow-y-auto"}`}>
+           {activeTab === "bins" ? (
+             <div className="absolute inset-0 animate-in fade-in duration-700">
+               <BinLocations />
+             </div>
+           ) : (
+             <div className="max-w-5xl mx-auto p-6 lg:p-10 space-y-6">
+                {activeTab === "schedule" && <PickupSchedule />}
+                {activeTab === "impact" && <MyImpact />}
+                {activeTab === "report" && <ReportIssue />}
+                {activeTab === "profile" && <CitizenProfileView initialData={profile} />}
+             </div>
+           )}
         </div>
       </main>
 
@@ -127,19 +218,17 @@ export default function CitizenDashboard() {
       {showLogoutModal && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => !isLoggingOut && setShowLogoutModal(false)} />
-          <div className="relative w-full max-w-sm bg-white rounded-[3rem] p-10 shadow-2xl">
-            <div className="text-center">
-              <span className="text-5xl block mb-4">🍃</span>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">See you later!</h2>
-              <p className="text-sm text-slate-500 mb-8">Ready to sign out of your community portal?</p>
-              <div className="space-y-3">
-                <button onClick={handleLogout} disabled={isLoggingOut} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-emerald-100 active:scale-95 transition-all">
-                  {isLoggingOut ? "Signing Out..." : "Confirm Sign Out"}
-                </button>
-                <button onClick={() => setShowLogoutModal(false)} disabled={isLoggingOut} className="w-full py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all">
-                  Cancel
-                </button>
-              </div>
+          <div className="relative w-full max-w-sm bg-white rounded-[3.5rem] p-10 shadow-2xl text-center">
+            <span className="text-5xl block mb-6">♻️</span>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2 uppercase italic">End Session?</h2>
+            <p className="text-sm text-slate-500 mb-8 font-medium italic">Your contribution today helped make GenSan a little cleaner.</p>
+            <div className="space-y-3">
+              <button onClick={handleLogout} className="w-full py-5 bg-emerald-600 text-white rounded-[1.5rem] font-black text-xs uppercase shadow-lg shadow-emerald-100 active:scale-95 transition-all">
+                Confirm & Logout
+              </button>
+              <button onClick={() => setShowLogoutModal(false)} className="w-full py-5 bg-slate-100 text-slate-600 rounded-[1.5rem] font-black text-xs uppercase active:scale-95 transition-all">
+                Stay Active
+              </button>
             </div>
           </div>
         </div>

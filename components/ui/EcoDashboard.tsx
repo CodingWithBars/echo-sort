@@ -1,12 +1,23 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { RealtimePostgresUpdatePayload } from "@supabase/supabase-js";
+
+const supabase = createClient();
 
 // --- Types ---
 interface CollectionLog {
   id: number;
   name: string;
   time: string;
+}
+
+// 🔥 FIXED: Explicitly typed interface for the payload
+interface DriverDetails {
+  id: string;
+  duty_status: string;
+  [key: string]: any;
 }
 
 interface DashboardProps {
@@ -30,7 +41,65 @@ interface DashboardProps {
 
 export default function EcoDashboard(props: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const { bins, eta, history, isTracking, onRefresh, routingMode, mapStyle } = props;
+
+  // --- 1. Realtime Sync Logic ---
+  useEffect(() => {
+    const syncStatus = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const channel = supabase
+        .channel('dashboard-status-sync')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'driver_details',
+            filter: `id=eq.${user.id}`
+          },
+          (payload: RealtimePostgresUpdatePayload<DriverDetails>) => {
+            // Update the parent's tracking state based on DB changes
+            const isNowOnDuty = payload.new.duty_status === "ON-DUTY";
+            if (isNowOnDuty && !isTracking) props.onStartTracking();
+            if (!isNowOnDuty && isTracking) props.onStopTracking();
+          }
+        )
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+    };
+
+    syncStatus();
+  }, [isTracking, props]);
+
+  // --- 2. Database Toggle Logic ---
+  const handleToggleTracking = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    setIsSyncing(true);
+    const nextStatus = isTracking ? "OFF-DUTY" : "ON-DUTY";
+
+    const { error } = await supabase
+      .from("driver_details")
+      .update({ duty_status: nextStatus })
+      .eq("id", user.id);
+
+    if (!error) {
+      // Trigger parent callbacks
+      if (nextStatus === "ON-DUTY") {
+        props.onStartTracking();
+      } else {
+        props.onStopTracking();
+      }
+    } else {
+      console.error("Failed to update status:", error.message);
+    }
+    setIsSyncing(false);
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -38,7 +107,6 @@ export default function EcoDashboard(props: DashboardProps) {
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
-  // Logic to count bins needing collection
   const activeStops = bins.filter(b => b.fillLevel >= 40).length;
 
   return (
@@ -81,13 +149,15 @@ export default function EcoDashboard(props: DashboardProps) {
       <div className="p-5 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-8">
         <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
           <button
-            onClick={isTracking ? props.onStopTracking : props.onStartTracking}
-            className={`w-full py-4 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border-[3px] ${
+            onClick={handleToggleTracking}
+            disabled={isSyncing}
+            className={`w-full py-4 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border-[3px] flex items-center justify-center gap-2 ${
               isTracking 
                 ? "bg-red-50 text-red-600 border-red-100 shadow-inner" 
                 : "bg-blue-600 text-white shadow-xl shadow-blue-100 border-blue-500"
             }`}
           >
+            {isSyncing && <span className="animate-spin">⏳</span>}
             {isTracking ? "🛑 Stop Tracking" : "🚀 Launch Tracking"}
           </button>
 
@@ -109,7 +179,7 @@ export default function EcoDashboard(props: DashboardProps) {
   );
 }
 
-// --- Sub-Components ---
+// --- Sub-Components (Remain Unchanged as requested) ---
 
 function ModeSelector({ mode, setMode, useFence, setUseFence }: any) {
   return (

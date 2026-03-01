@@ -209,7 +209,7 @@ export default function ProfileView({
           <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
           <div className="absolute top-8 right-12 flex flex-col items-end">
              <Fingerprint size={40} className="text-emerald-500/20" />
-             <span className="text-emerald-500/10 font-black text-4xl mt-2 tracking-tighter">ECOROUTE: CITIZEN</span>
+             <span className="text-emerald-500/10 font-black text-4xl mt-2 tracking-tighter">ECOROUTE: PROFILE</span>
           </div>
         </div>
 

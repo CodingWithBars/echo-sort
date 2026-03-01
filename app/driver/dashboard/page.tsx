@@ -1,12 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation"; // Added router
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { createClient } from "@/utils/supabase/client"; // Import Supabase client
+import { createClient } from "@/utils/supabase/client";
 import CollectionHistory from "@/components/driver/CollectionHistory";
 import TruckStatus from "@/components/driver/TruckStatus";
-import ProfileView from "@/components/admin/ProfileView";
+import DriverProfileView from "@/components/driver/DriverProfileView";
+import { RealtimePostgresUpdatePayload } from "@supabase/supabase-js";
+
+// Type definition for the payload to fix the implicit 'any' error
+interface DriverDetails {
+  id: string;
+  duty_status: string;
+  license_number?: string;
+  vehicle_plate_number?: string;
+  assigned_route?: string;
+  employment_status?: string;
+}
 
 const DriverMap = dynamic(() => import("@/components/driver/DriverMap"), {
   ssr: false,
@@ -26,10 +37,100 @@ export default function DriverDashboard() {
   const [activeTab, setActiveTab] = useState("map");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false); // Added loading state for logout
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // --- DRIVER DATA STATES ---
+  const [driverData, setDriverData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const router = useRouter();
   const supabase = createClient();
+
+  // --- 1. FETCH INITIAL DRIVER DATA ---
+  useEffect(() => {
+    async function getDriverProfile() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          router.push("/login");
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .select(
+            `
+            id,
+            full_name,
+            avatar_url,
+            driver_details!inner (
+              id,
+              license_number,
+              vehicle_plate_number,
+              assigned_route,
+              duty_status,
+              employment_status
+            )
+          `,
+          )
+          .eq("id", user.id)
+          .single();
+
+        if (error) throw error;
+
+        if (data.driver_details.employment_status !== "ACTIVE") {
+          await supabase.auth.signOut();
+          router.push("/login");
+          return;
+        }
+
+        setDriverData(data);
+      } catch (err) {
+        console.error("Dashboard Error:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    getDriverProfile();
+  }, [supabase, router]);
+
+  // --- 2. REALTIME SYNC FOR DUTY STATUS ---
+  useEffect(() => {
+    if (!driverData?.id) return;
+
+    const channel = supabase
+      .channel(`driver-status-${driverData.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "driver_details",
+          filter: `id=eq.${driverData.id}`,
+        },
+        (payload: RealtimePostgresUpdatePayload<DriverDetails>) => {
+          // 🔥 FIXED: Explicitly typed 'payload' to avoid 'any' error
+          const updatedRow = payload.new;
+          
+          setDriverData((prev: any) => ({
+            ...prev,
+            driver_details: {
+              ...prev.driver_details,
+              duty_status: updatedRow.duty_status,
+            },
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [driverData?.id, supabase]);
 
   // --- LOGOUT LOGIC ---
   const handleLogout = async () => {
@@ -37,7 +138,7 @@ export default function DriverDashboard() {
     try {
       await supabase.auth.signOut();
       router.push("/login");
-      router.refresh(); // Clear any cached server components
+      router.refresh();
     } catch (error) {
       console.error("Error logging out:", error);
       setIsLoggingOut(false);
@@ -51,6 +152,8 @@ export default function DriverDashboard() {
   ];
 
   const renderContent = () => {
+    if (isLoading) return null;
+
     switch (activeTab) {
       case "map":
         return (
@@ -63,7 +166,7 @@ export default function DriverDashboard() {
       case "status":
         return <TruckStatus />;
       case "profile":
-        return <ProfileView />;
+        return <DriverProfileView />;
       default:
         return <DriverMap />;
     }
@@ -72,9 +175,22 @@ export default function DriverDashboard() {
   const currentLabel =
     menuItems.find((item) => item.id === activeTab)?.label || "Driver Portal";
 
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
+            Syncing Profile...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
-      {/* --- MOBILE SIDEBAR OVERLAY --- */}
+      {/* MOBILE SIDEBAR OVERLAY */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden transition-opacity"
@@ -82,17 +198,17 @@ export default function DriverDashboard() {
         />
       )}
 
-      {/* --- SIDEBAR --- */}
+      {/* SIDEBAR */}
       <aside
         className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}
       >
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="mb-8 flex h-18 w-18 items-center justify-center rounded-[1.5rem] shadow-xl shadow-emerald-100 border border-emerald-50 overflow-hidden">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[1.2rem] shadow-xl shadow-emerald-100 border border-emerald-50 overflow-hidden">
               <img
                 src="/icons/icon-512x512.png"
                 alt="EcoRoute Logo"
-                className="h-full w-full object-cover p-4"
+                className="h-full w-full object-cover p-3"
               />
             </div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
@@ -140,7 +256,7 @@ export default function DriverDashboard() {
         </div>
       </aside>
 
-      {/* --- MAIN CONTENT AREA --- */}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
@@ -151,8 +267,10 @@ export default function DriverDashboard() {
               ☰
             </button>
             <div>
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
-                On Duty
+              <p
+                className={`text-[10px] font-black uppercase tracking-[0.2em] mb-0.5 ${driverData?.driver_details?.duty_status === "ON-DUTY" ? "text-emerald-600" : "text-slate-400"}`}
+              >
+                {driverData?.driver_details?.duty_status || "OFF-DUTY"}
               </p>
               <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
                 {currentLabel}
@@ -160,20 +278,53 @@ export default function DriverDashboard() {
             </div>
           </div>
 
+          {/* DRIVER PROFILE BUTTON */}
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${activeTab === "profile" ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-100"}`}
+            className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${
+              activeTab === "profile"
+                ? "bg-emerald-50 border-emerald-200 shadow-sm"
+                : "bg-slate-50 border-slate-100 hover:bg-white hover:border-slate-200"
+            }`}
           >
-            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-lg">
-              🚛
+            <div className="relative group/nav-avatar">
+              <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-100 overflow-hidden border-2 border-white">
+                {driverData?.avatar_url ? (
+                  <img
+                    src={driverData.avatar_url}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="italic">
+                    {driverData?.full_name?.charAt(0) || "D"}
+                  </span>
+                )}
+              </div>
+
+              {/* Status Indicator Dot (Updates Realtime) */}
+              <div
+                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full transition-colors duration-500 ${
+                  driverData?.driver_details?.duty_status === "ON-DUTY"
+                    ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    : "bg-slate-400"
+                }`}
+              />
             </div>
+
             <div className="text-left hidden sm:block">
-              <p className="text-[10px] font-black text-slate-900 leading-none">
-                Driver #4421
+              <p className="text-[10px] font-black text-slate-900 leading-none uppercase tracking-tighter italic">
+                {driverData?.full_name}
               </p>
-              <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">
-                ABC-1234
-              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">
+                  {driverData?.driver_details?.vehicle_plate_number || "NO TRUCK"}
+                </p>
+                <div className="w-1 h-1 rounded-full bg-slate-200" />
+                <p className="text-[8px] text-emerald-600 font-black uppercase tracking-wider">
+                  {driverData?.driver_details?.assigned_route || "NO ROUTE"}
+                </p>
+              </div>
             </div>
           </button>
         </header>
@@ -185,7 +336,7 @@ export default function DriverDashboard() {
         </div>
       </main>
 
-      {/* --- LOGOUT MODAL --- */}
+      {/* LOGOUT MODAL */}
       {showLogoutModal && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
           <div
