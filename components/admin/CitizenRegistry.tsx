@@ -29,6 +29,7 @@ export default function CitizenRegistry({
   const [showArchived, setShowArchived] = useState(false);
   const [selectedCitizen, setSelectedCitizen] = useState<Citizen | null>(null);
   const [citizenToArchive, setCitizenToArchive] = useState<Citizen | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false); // Enhancement: Loading state
   const [citizens, setCitizens] = useState<Citizen[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -80,28 +81,33 @@ export default function CitizenRegistry({
 
   // --- DYNAMIC FILTER LOGIC ---
   const uniqueBarangays = useMemo(() => {
-    const list = Array.from(new Set(citizens.map((c) => c.barangay)))
+    return Array.from(new Set(citizens.map((c) => c.barangay)))
       .filter((b) => b !== "Unassigned")
       .sort();
-    return list;
   }, [citizens]);
 
   // --- ARCHIVE/RESTORE LOGIC ---
   const handleArchiveToggle = async () => {
     if (!citizenToArchive) return;
+    setIsProcessing(true);
     
+    const newArchiveStatus = !citizenToArchive.is_archived;
+
     const { error } = await supabase
       .from("profiles")
-      .update({ is_archived: !citizenToArchive.is_archived })
+      .update({ is_archived: newArchiveStatus })
       .eq("id", citizenToArchive.id);
 
     if (error) {
-      alert(`Failed to update resident status.`);
+      console.error("Archive Error:", error);
+      alert(`Error: ${error.message}. Check if you have UPDATE permissions in RLS.`);
     } else {
+      // Success: Remove from current view
       setCitizens((prev) => prev.filter((c) => c.id !== citizenToArchive.id));
       setCitizenToArchive(null);
       setSelectedCitizen(null);
     }
+    setIsProcessing(false);
   };
 
   useEffect(() => {
@@ -118,13 +124,24 @@ export default function CitizenRegistry({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
+      
+      {/* --- ENHANCEMENT: QUICK STATS --- */}
+      <div className="flex items-center gap-4 px-2">
+        <div className="flex items-center gap-2">
+           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+             {showArchived ? "Archived Vault" : "Active Registry"} • {filtered.length} Residents
+           </span>
+        </div>
+      </div>
+
       {/* --- FILTER BAR --- */}
       <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
         <div className="relative flex-1 group">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
           <input
             type="text"
-            placeholder="Search resident..."
+            placeholder="Search resident name or ID..."
             className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-transparent rounded-2xl text-xs font-bold outline-none focus:bg-white focus:border-emerald-500/20 transition-all"
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -151,7 +168,7 @@ export default function CitizenRegistry({
                 : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
             }`}
           >
-            {showArchived ? "📁 View Active" : "📂 View Archives"}
+            {showArchived ? "📁 Active List" : "📂 View Archives"}
           </button>
         </div>
       </div>
@@ -170,7 +187,6 @@ export default function CitizenRegistry({
                 key={citizen.id}
                 className="group relative bg-white rounded-[2rem] border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:shadow-emerald-500/5 transition-all duration-300"
               >
-                {/* Card Content (Existing) */}
                 <div className="flex justify-between items-start mb-4">
                   <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full ${citizen.is_archived ? "bg-slate-100" : "bg-emerald-50 border border-emerald-100"}`}>
                     <div className={`w-1.5 h-1.5 rounded-full ${citizen.is_archived ? "bg-slate-400" : "bg-emerald-500"}`} />
@@ -183,7 +199,7 @@ export default function CitizenRegistry({
 
                 <div className="mb-6">
                   <h3 className="text-lg font-black text-slate-900 leading-tight group-hover:text-emerald-600 transition-colors">{citizen.name}</h3>
-                  <p className="text-xs font-bold text-slate-400 mt-1">{citizen.email || "No email provided"}</p>
+                  <p className="text-xs font-bold text-slate-400 mt-1 truncate">{citizen.email || "No email provided"}</p>
                 </div>
 
                 <div className={`p-4 rounded-2xl mb-6 transition-colors ${citizen.barangay === "Unassigned" ? "bg-amber-50 border border-amber-100" : "bg-slate-50 border border-transparent"}`}>
@@ -200,12 +216,18 @@ export default function CitizenRegistry({
 
                 <button
                   onClick={() => setSelectedCitizen(citizen)}
-                  className="w-full py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all active:scale-95"
+                  className="w-full py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all active:scale-95 shadow-md shadow-slate-200"
                 >
                   Manage Profile
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {!isLoading && filtered.length === 0 && (
+          <div className="text-center py-20 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200 animate-in slide-in-from-bottom-4 duration-500">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No residents found matching your search</p>
           </div>
         )}
       </div>
@@ -222,7 +244,7 @@ export default function CitizenRegistry({
                   <h2 className="text-xl font-black text-slate-900">{selectedCitizen.name}</h2>
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Resident Profile</p>
                 </div>
-                <button onClick={() => setSelectedCitizen(null)} className="text-slate-400 hover:text-slate-900">✕</button>
+                <button onClick={() => setSelectedCitizen(null)} className="text-slate-400 hover:text-slate-900 text-lg">✕</button>
               </div>
 
               <div className="space-y-4">
@@ -240,7 +262,7 @@ export default function CitizenRegistry({
                 <div className="flex gap-3 pt-4">
                   {!selectedCitizen.is_archived && (
                     <button
-                      className="flex-1 py-4 bg-white text-slate-600 border border-slate-200 rounded-xl font-black text-[10px] uppercase hover:bg-slate-50"
+                      className="flex-1 py-4 bg-white text-slate-600 border border-slate-200 rounded-xl font-black text-[10px] uppercase hover:bg-slate-50 transition-all"
                       onClick={() => {
                         onEditProfile(selectedCitizen);
                         setSelectedCitizen(null);
@@ -269,36 +291,43 @@ export default function CitizenRegistry({
       {/* --- CUSTOM ARCHIVE CONFIRMATION MODAL (EcoRoute Style) --- */}
       {citizenToArchive && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setCitizenToArchive(null)} />
-          <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl p-8 text-center animate-in fade-in zoom-in duration-300">
-            <div className={`w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center text-2xl ${citizenToArchive.is_archived ? 'bg-emerald-100' : 'bg-amber-100'}`}>
-              {citizenToArchive.is_archived ? "♻️" : "📁"}
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => !isProcessing && setCitizenToArchive(null)} />
+          <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl p-8 text-center animate-in fade-in zoom-in duration-300 border border-white/20">
+            <div className={`w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center text-2xl ${citizenToArchive.is_archived ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              {isProcessing ? (
+                <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                citizenToArchive.is_archived ? "♻️" : "📁"
+              )}
             </div>
             <h3 className="text-lg font-black text-slate-900 mb-2">
               {citizenToArchive.is_archived ? "Restore Resident?" : "Archive Resident?"}
             </h3>
             <p className="text-xs font-bold text-slate-400 mb-8 leading-relaxed px-4">
               {citizenToArchive.is_archived 
-                ? `Are you sure you want to restore ${citizenToArchive.name} to the active registry?`
-                : `This will move ${citizenToArchive.name} to the archives. They can be restored later.`}
+                ? `Move ${citizenToArchive.name} back to the active registry.`
+                : `Archive ${citizenToArchive.name}? They will no longer appear in the active registry.`}
             </p>
             <div className="flex flex-col gap-2">
               <button
+                disabled={isProcessing}
                 onClick={handleArchiveToggle}
-                className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg ${
                   citizenToArchive.is_archived 
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700" 
-                    : "bg-slate-900 text-white hover:bg-red-600"
-                }`}
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200" 
+                    : "bg-slate-900 text-white hover:bg-red-600 shadow-slate-200"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                Confirm {citizenToArchive.is_archived ? "Restore" : "Archive"}
+                {isProcessing ? "Processing..." : `Confirm ${citizenToArchive.is_archived ? "Restore" : "Archive"}`}
               </button>
-              <button
-                onClick={() => setCitizenToArchive(null)}
-                className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
+              {!isProcessing && (
+                <button
+                  onClick={() => setCitizenToArchive(null)}
+                  className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
         </div>
