@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react"; // Added useEffect
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-// 1. Rename the import here
 import nextDynamic from "next/dynamic";
 
 // Views
@@ -15,7 +14,6 @@ import ViolationsView from "@/components/admin/ViolationsView";
 import ProfileView from "@/components/admin/ProfileView";
 
 const DynamicBinMap = nextDynamic(
-  // Make sure this matches the actual filename in your folder!
   () => import("@/components/admin/BinMapView"),
   {
     ssr: false,
@@ -25,7 +23,6 @@ const DynamicBinMap = nextDynamic(
   },
 );
 
-// 3. This export is now safe because it doesn't conflict with 'nextDynamic'
 export const dynamic = "force-dynamic";
 
 export default function AdminDashboard() {
@@ -37,8 +34,41 @@ export default function AdminDashboard() {
     null,
   );
 
+  // --- NEW: AUTH STATE ---
+  const [adminProfile, setAdminProfile] = useState<{
+    full_name: string;
+    role: string;
+    avatar_url?: string | null;
+  } | null>(null);
+
   const router = useRouter();
   const supabase = createClient();
+
+  // --- FETCH REAL ADMIN DETAILS ---
+  useEffect(() => {
+    const fetchAdminDetails = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name, role, avatar_url")
+          .eq("id", user.id)
+          .single();
+
+        if (profile) {
+          setAdminProfile(profile);
+        }
+      } else {
+        // Redirect if no session found
+        router.replace("/login");
+      }
+    };
+
+    fetchAdminDetails();
+  }, [supabase, router]);
 
   // --- LOGOUT LOGIC ---
   const handleLogout = async () => {
@@ -120,7 +150,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
-      {/* --- MOBILE SIDEBAR OVERLAY --- */}
+      {/* MOBILE SIDEBAR OVERLAY */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden transition-opacity"
@@ -128,11 +158,9 @@ export default function AdminDashboard() {
         />
       )}
 
-      {/* --- SIDEBAR (Updated to Match Driver/Citizen Style) --- */}
+      {/* SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${
-          isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}
       >
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
@@ -156,11 +184,7 @@ export default function AdminDashboard() {
                 setActiveTab(item.id);
                 setIsSidebarOpen(false);
               }}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-200 group ${
-                activeTab === item.id
-                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-200 group ${activeTab === item.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"}`}
             >
               <span
                 className={`text-xl ${activeTab === item.id ? "brightness-200" : "grayscale opacity-70"}`}
@@ -184,7 +208,7 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
-      {/* --- MAIN CONTENT AREA --- */}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
         {/* HEADER */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
@@ -195,8 +219,6 @@ export default function AdminDashboard() {
             >
               ☰
             </button>
-
-            {/* This container now stays visible on mobile (removed 'hidden sm:block') */}
             <div className="block">
               <p className="text-[8px] md:text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
                 Admin Control
@@ -207,24 +229,39 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* DYNAMIC PROFILE BADGE */}
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex items-center gap-3 p-1 pr-1 md:pr-4 rounded-full border transition-all ${
+            className={`flex items-center gap-3 p-1 pr-1 md:pr-4 rounded-full border transition-all duration-300 ${
               activeTab === "profile"
-                ? "bg-emerald-50 border-emerald-200"
-                : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                ? "bg-emerald-50 border-emerald-200 shadow-sm"
+                : "bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50"
             }`}
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-200 flex items-center justify-center text-sm md:text-lg overflow-hidden">
-              👤
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-slate-100 flex items-center justify-center text-sm md:text-lg overflow-hidden border border-slate-200 relative">
+              {adminProfile?.avatar_url ? (
+                <img
+                  src={adminProfile.avatar_url}
+                  alt="Admin"
+                  className="w-full h-full object-cover animate-in fade-in duration-500"
+                />
+              ) : (
+                <span className="font-black text-emerald-700 italic">
+                  {adminProfile?.full_name?.charAt(0) || "👤"}
+                </span>
+              )}
             </div>
+
             <div className="text-left hidden md:block">
-              <p className="text-[10px] font-black text-slate-900 leading-none">
-                System Master
+              <p className="text-[10px] font-black text-slate-900 leading-none uppercase tracking-tight">
+                {adminProfile?.full_name || "Loading..."}
               </p>
-              <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">
-                Super Admin
-              </p>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                  {adminProfile?.role || "Administrator"}
+                </p>
+              </div>
             </div>
           </button>
         </header>
@@ -233,7 +270,7 @@ export default function AdminDashboard() {
         <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       </main>
 
-      {/* --- LOGOUT MODAL (Driver Style) --- */}
+      {/* LOGOUT MODAL */}
       {showLogoutModal && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
           <div
