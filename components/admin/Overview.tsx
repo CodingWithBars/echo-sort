@@ -11,6 +11,7 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  Zap,
 } from "lucide-react";
 
 interface Collection {
@@ -46,9 +47,7 @@ export default function Overview() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any[]>([]);
   const [brgyPerformance, setBrgyPerformance] = useState<PerformanceData[]>([]);
-  const [wasteComposition, setWasteComposition] = useState<CompositionData[]>(
-    [],
-  );
+  const [wasteComposition, setWasteComposition] = useState<CompositionData[]>([]);
   const [dailyTrend, setDailyTrend] = useState<DailyTrend[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
@@ -91,17 +90,16 @@ export default function Overview() {
         0,
       );
 
-      // --- 1. SYSTEM THROUGHPUT (Robust Date Filtering) ---
+      // --- 1. SYSTEM THROUGHPUT (Stable Trend Calculation) ---
       const trendData = [...Array(7)].map((_, i) => {
         const d = new Date();
         d.setUTCDate(d.getUTCDate() - (6 - i));
-        const dateKey = d.toISOString().split("T")[0]; // YYYY-MM-DD
+        const dateKey = d.toISOString().split("T")[0];
 
         const dayTotal = collections
           .filter((c) => {
             if (!c.created_at) return false;
-            // Robust check: extract YYYY-MM-DD from the timestamp
-            return c.created_at.split("T")[0] === dateKey;
+            return c.created_at.includes(dateKey);
           })
           .reduce((sum, c) => sum + (Number(c.weight) || 0), 0);
 
@@ -119,16 +117,15 @@ export default function Overview() {
       setDailyTrend(
         trendData.map((d) => ({
           ...d,
-          // Added Math.max(..., 2) so bars are never truly 0px if there is data
           percentage: (d.weight / maxDayWeight) * 100,
         })),
       );
 
-      // --- 2. WASTE COMPOSITION FIX ---
+      // --- 2. WASTE COMPOSITION ---
       const composition: CompositionData[] = [
         {
           type: "Biodegradable",
-          color: "bg-emerald-400",
+          color: "bg-emerald-500",
           sub: "Organic",
           weight: collections
             .filter((c) => c.type === "Biodegradable")
@@ -136,16 +133,15 @@ export default function Overview() {
         },
         {
           type: "Recyclables",
-          color: "bg-blue-400",
+          color: "bg-blue-500",
           sub: "Plastics/Paper",
-          // Changed to match "Recyclables" (plural) or "Recyclable"
           weight: collections
             .filter((c) => c.type.toLowerCase().includes("recyclable"))
             .reduce((s, i) => s + Number(i.weight) || 0, 0),
         },
         {
           type: "Residual",
-          color: "bg-red-400",
+          color: "bg-orange-500",
           sub: "Non-recyclable",
           weight: collections
             .filter((c) => c.type === "Residual")
@@ -153,9 +149,7 @@ export default function Overview() {
         },
       ].map((item) => ({
         ...item,
-        // Ensure we don't divide by zero if data is still loading
-        percent:
-          totalWeight > 0 ? Math.round((item.weight / totalWeight) * 100) : 0,
+        percent: totalWeight > 0 ? Math.round((item.weight / totalWeight) * 100) : 0,
       }));
 
       setWasteComposition(composition);
@@ -163,43 +157,39 @@ export default function Overview() {
       // --- 3. KPI STATS ---
       setStats([
         {
-          label: "Fleet Status",
+          label: "Active Fleet",
           value: `${onDutyRes.count || 0}/${driversRes.count || 0}`,
-          icon: "🚚",
+          icon: <Truck size={24} />,
           color: "text-blue-600",
           bg: "bg-blue-50",
-          trend: "On-Duty",
+          trend: "Live Status",
         },
         {
-          label: "Community",
+          label: "Verified Community",
           value: (citizensRes.count || 0).toLocaleString(),
-          icon: "👥",
+          icon: <Users size={24} />,
           color: "text-emerald-600",
           bg: "bg-emerald-50",
-          trend: "Verified",
+          trend: "Growth Active",
         },
         {
-          label: "Total Load",
-          value:
-            totalWeight >= 1000
-              ? `${(totalWeight / 1000).toFixed(1)}t`
-              : `${totalWeight}kg`,
-          icon: "♻️",
+          label: "Total Collection",
+          value: totalWeight >= 1000 ? `${(totalWeight / 1000).toFixed(1)}t` : `${totalWeight}kg`,
+          icon: <Recycle size={24} />,
           color: "text-orange-600",
           bg: "bg-orange-50",
-          trend: "Collected",
+          trend: "Net Weight",
         },
         {
-          label: "Violations",
+          label: "Pending Issues",
           value: violationsRes.count || "0",
-          icon: "⚠️",
+          icon: <AlertTriangle size={24} />,
           color: "text-red-600",
           bg: "bg-red-50",
-          trend: "Active",
+          trend: "Attention Required",
         },
       ]);
 
-      // --- 4. REGIONAL EFFICIENCY ---
       const brgyMap = collections.reduce((acc: any, curr) => {
         acc[curr.barangay] = (acc[curr.barangay] || 0) + Number(curr.weight);
         return acc;
@@ -226,15 +216,9 @@ export default function Overview() {
     fetchDashboardData();
     const channel = supabase
       .channel("realtime-overview")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "collections" },
-        fetchDashboardData,
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "collections" }, fetchDashboardData)
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [fetchDashboardData]);
 
   const handleScroll = () => {
@@ -244,65 +228,38 @@ export default function Overview() {
       const scrollLeft = container.scrollLeft;
       const cardWidth = container.offsetWidth * 0.85 + 24;
       const newIndex = Math.round(scrollLeft / cardWidth);
-      if (
-        newIndex !== currentIndex &&
-        newIndex >= 0 &&
-        newIndex < stats.length
-      ) {
+      if (newIndex !== currentIndex && newIndex >= 0 && newIndex < stats.length) {
         setCurrentIndex(newIndex);
       }
     }
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = setTimeout(() => {
-      setIsUserScrolling(false);
-    }, 3000);
+    scrollTimeoutRef.current = setTimeout(() => { setIsUserScrolling(false); }, 3000);
   };
-
-  useEffect(() => {
-    if (stats.length === 0 || loading || isUserScrolling) return;
-    const isMobile = window.innerWidth < 768;
-    if (!isMobile) return;
-    const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % stats.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [stats.length, loading, isUserScrolling]);
-
-  useEffect(() => {
-    if (scrollRef.current && !loading && !isUserScrolling) {
-      const container = scrollRef.current;
-      const cardWidth = container.offsetWidth * 0.85 + 24;
-      container.scrollTo({
-        left: currentIndex * cardWidth,
-        behavior: "smooth",
-      });
-    }
-  }, [currentIndex, loading, isUserScrolling]);
 
   if (loading)
     return (
-      <div className="h-96 flex items-center justify-center animate-pulse text-emerald-500 font-black italic uppercase tracking-widest">
-        Synchronizing Eco-Node...
+      <div className="h-96 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
+        <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.3em]">Synchronizing Eco-Node</p>
       </div>
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-10">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 pb-10">
+      
       {/* KPI HERO SLIDER */}
       <div className="relative">
-        <div className="flex justify-between items-center mb-4 px-2">
+        <div className="flex justify-between items-center mb-6 px-1">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
-            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-              Live Network Vitals
-            </h4>
+            <Zap size={14} className="text-emerald-500 fill-emerald-500" />
+            <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em]">Real-Time Metrics</h4>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             {stats.map((_, i) => (
               <div
                 key={i}
-                className={`h-1 transition-all duration-500 rounded-full ${
-                  currentIndex === i ? "w-4 bg-emerald-500" : "w-1 bg-slate-200"
+                className={`h-1 rounded-full transition-all duration-500 ${
+                  currentIndex === i ? "w-6 bg-emerald-500" : "w-1.5 bg-slate-200"
                 }`}
               />
             ))}
@@ -320,39 +277,22 @@ export default function Overview() {
               <div
                 key={i}
                 className={`
-                  min-w-[85%] md:min-w-0 snap-center p-7 rounded-[2.5rem] border transition-all duration-700 
-                  ${
-                    isFocused
-                      ? "bg-white border-emerald-400 shadow-xl scale-100 z-10"
-                      : "bg-white/60 border-slate-100 shadow-sm scale-95 opacity-40 md:opacity-100 md:scale-100"
-                  }
+                  min-w-[85%] md:min-w-0 snap-center p-6 rounded-3xl border transition-all duration-500 
+                  ${isFocused ? "bg-white border-emerald-200 shadow-xl shadow-emerald-900/5 ring-4 ring-emerald-500/5" : "bg-white border-slate-100 shadow-sm opacity-60 md:opacity-100"}
                 `}
               >
                 <div className="flex justify-between items-start mb-6">
-                  <div
-                    className={`text-2xl w-14 h-14 rounded-2xl ${stat.bg} ${stat.color} flex items-center justify-center shadow-inner transition-transform duration-700 ${isFocused ? "rotate-12 scale-110" : ""}`}
-                  >
+                  <div className={`p-3 rounded-2xl ${stat.bg} ${stat.color} transition-transform duration-500 ${isFocused ? "scale-110 rotate-3" : ""}`}>
                     {stat.icon}
                   </div>
-                  <span
-                    className={`text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-tighter transition-colors ${isFocused ? "bg-emerald-500 text-white" : "bg-slate-50 text-slate-400"}`}
-                  >
+                  <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${isFocused ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-400"}`}>
                     {stat.trend}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">
-                  {stat.label}
-                </p>
-                <p
-                  className={`text-4xl font-black tracking-tighter italic uppercase transition-colors ${isFocused ? "text-slate-900" : "text-slate-500"}`}
-                >
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.15em] mb-1">{stat.label}</p>
+                <p className={`text-3xl font-black tracking-tight uppercase ${isFocused ? "text-slate-900" : "text-slate-600"}`}>
                   {stat.value}
                 </p>
-                <div className="mt-6 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-1000 ${isFocused ? "bg-emerald-500 w-full" : "bg-slate-300 w-2/3"}`}
-                  />
-                </div>
               </div>
             );
           })}
@@ -361,61 +301,52 @@ export default function Overview() {
 
       {/* CHARTS SECTION */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        <div className="xl:col-span-2 bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col">
+        
+        {/* Main Throughput Chart */}
+        <div className="xl:col-span-2 bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-12">
             <div>
-              <h3 className="text-2xl font-black text-slate-900 italic uppercase">
-                System Throughput
-              </h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-                Daily Tonnage Tracking
-              </p>
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">System Throughput</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">7-Day Analysis • Tonnage</p>
             </div>
-            <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600">
-              <TrendingUp size={20} />
+            <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
+                <div className="px-4 py-2 bg-white rounded-lg shadow-sm text-[9px] font-black text-emerald-600 uppercase">Weight (kg)</div>
             </div>
           </div>
-          <div className="flex items-end justify-between h-64 gap-3 px-2">
+          
+          <div className="flex items-end justify-between h-64 gap-3 md:gap-6 px-2">
             {dailyTrend.map((data, i) => (
-              <div
-                key={i}
-                className="flex-1 flex flex-col items-center gap-4 h-full group"
-              >
-                <div className="relative w-full bg-slate-50/80 rounded-2xl flex flex-col justify-end h-full overflow-hidden border border-slate-100">
+              <div key={i} className="flex-1 flex flex-col items-center gap-4 h-full">
+                <div className="relative w-full bg-slate-50 rounded-2xl flex flex-col justify-end h-full overflow-hidden border border-slate-100">
                   <div
-                    className="w-full bg-emerald-500 rounded-xl transition-all duration-1000 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                    className="w-full bg-emerald-500 transition-all duration-1000 relative group"
                     style={{ height: `${data.percentage}%` }}
-                  />
+                  >
+                    <div className="absolute top-2 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex justify-center">
+                        <span className="bg-slate-900 text-white text-[8px] px-2 py-1 rounded-md font-bold">{data.weight}kg</span>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                  {data.day}
-                </span>
+                <span className="text-[9px] font-black text-slate-400 uppercase">{data.day}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white flex flex-col relative overflow-hidden">
-          <div className="absolute -right-4 -top-4 opacity-5 italic font-black text-8xl">
-            DATA
-          </div>
-          <h3 className="text-2xl font-black mb-10 italic uppercase relative z-10">
-            Composition
-          </h3>
+        {/* Composition Chart */}
+        <div className="bg-slate-900 p-8 md:p-10 rounded-[2.5rem] text-white flex flex-col border border-slate-800 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[60px] rounded-full" />
+          <h3 className="text-xl font-black mb-10 uppercase tracking-tight relative z-10">Composition</h3>
           <div className="space-y-8 relative z-10">
             {wasteComposition.map((item, i) => (
               <div key={i}>
                 <div className="flex justify-between items-end mb-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest">
-                    {item.type}
-                  </p>
-                  <span className="text-xl font-black text-emerald-400">
-                    {item.percent}%
-                  </span>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.type}</p>
+                  <span className="text-xl font-black text-emerald-400">{item.percent}%</span>
                 </div>
-                <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-3 bg-white/5 rounded-full overflow-hidden border border-white/5">
                   <div
-                    className={`h-full ${item.color} rounded-full transition-all duration-1000`}
+                    className={`h-full ${item.color} rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(16,185,129,0.3)]`}
                     style={{ width: `${item.percent}%` }}
                   />
                 </div>
@@ -427,37 +358,27 @@ export default function Overview() {
 
       {/* REGIONAL EFFICIENCY & NODE STATUS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm">
-          <h3 className="text-xl font-black text-slate-900 mb-8 italic uppercase">
-            Regional Efficiency
-          </h3>
-          <div className="grid gap-4">
+        
+        {/* Barangay Performance */}
+        <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
+          <h3 className="text-xl font-black text-slate-900 mb-8 uppercase tracking-tight">Regional Efficiency</h3>
+          <div className="grid gap-3">
             {brgyPerformance.map((brgy, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-transparent hover:border-emerald-200 transition-all group"
+                className="flex items-center justify-between p-5 bg-slate-50 border border-slate-100 rounded-2xl hover:border-emerald-300 hover:bg-white hover:shadow-lg hover:shadow-emerald-900/5 transition-all group"
               >
                 <div className="flex items-center gap-5">
-                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400 shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                    {i + 1}
+                  <div className="w-10 h-10 bg-white border border-slate-100 rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600 transition-all">
+                    0{i + 1}
                   </div>
                   <div>
-                    <p className="text-sm font-black text-slate-800 uppercase italic">
-                      Brgy. {brgy.name}
-                    </p>
-                    <p className="text-[10px] font-bold text-slate-400">
-                      {brgy.weight}kg Total
-                    </p>
+                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Brgy. {brgy.name}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{brgy.weight}kg Volume</p>
                   </div>
                 </div>
-                <div
-                  className={`flex items-center gap-1 text-[10px] font-black ${brgy.growth >= 0 ? "text-emerald-500" : "text-red-500"}`}
-                >
-                  {brgy.growth >= 0 ? (
-                    <ArrowUpRight size={14} />
-                  ) : (
-                    <ArrowDownRight size={14} />
-                  )}
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black ${brgy.growth >= 0 ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                  {brgy.growth >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                   {Math.abs(brgy.growth)}%
                 </div>
               </div>
@@ -465,37 +386,30 @@ export default function Overview() {
           </div>
         </div>
 
-        <div className="bg-emerald-600 p-10 rounded-[3.5rem] text-white flex flex-col justify-between group overflow-hidden relative">
-          <Activity
-            className="absolute -right-10 -bottom-10 text-white/10 group-hover:scale-125 transition-transform duration-1000"
-            size={240}
-          />
+        {/* System Diagnostics / Active Status */}
+        <div className="bg-emerald-600 p-8 md:p-10 rounded-[2.5rem] text-white flex flex-col justify-between group overflow-hidden relative shadow-xl shadow-emerald-900/20 border-4 border-emerald-500">
+          <Activity className="absolute -right-12 -bottom-12 text-white/10 group-hover:scale-125 transition-transform duration-1000 rotate-12" size={280} />
+          
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-3 h-3 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]" />
-              <h3 className="text-xl font-black uppercase tracking-widest italic">
-                Node Status: Active
-              </h3>
+            <div className="flex items-center gap-3 mb-6 bg-white/10 w-fit px-4 py-2 rounded-full border border-white/20 backdrop-blur-md">
+              <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-[0_0_12px_white]" />
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">Node Status: Active</h3>
             </div>
-            <p className="text-emerald-100 text-sm font-medium max-w-xs leading-relaxed">
-              System is performing within optimal parameters. Real-time
-              telemetry is active across all sectors.
+            <h2 className="text-4xl font-black uppercase tracking-tighter leading-[0.9] mb-4">System<br/>Optimized</h2>
+            <p className="text-emerald-50 text-xs font-bold uppercase tracking-widest max-w-xs leading-relaxed opacity-80">
+              Telemetry active across all sectors. Protocols performing at peak parameters.
             </p>
           </div>
-          <button className="relative z-10 w-fit px-8 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] mt-8 hover:bg-black transition-all">
-            System Diagnostics
+
+          <button className="relative z-10 w-full md:w-fit px-10 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] mt-8 hover:bg-black hover:translate-y-[-2px] active:translate-y-0 transition-all shadow-xl">
+            Run Diagnostics
           </button>
         </div>
       </div>
 
       <style jsx global>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );

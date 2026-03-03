@@ -4,8 +4,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
+import { Shield, Mail, Lock, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
-// 1. Move the logic into a separate component
 function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,10 +15,9 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
 
   const router = useRouter();
-  const searchParams = useSearchParams(); // This hook requires Suspense
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // Handle success messages from the registration redirect
   useEffect(() => {
     const msg = searchParams.get("message");
     if (msg) setMessage(msg);
@@ -30,7 +29,6 @@ function LoginContent() {
     setMessage("");
     setLoading(true);
 
-    // 1. Authenticate the user
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -42,7 +40,6 @@ function LoginContent() {
       return;
     }
 
-    // 2. Fetch the Role from the PROFILES table (where we ran the SQL update)
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
@@ -55,11 +52,9 @@ function LoginContent() {
       return;
     }
 
-    // 3. Routing based on the database Role
     const role = profile.role;
-
     if (role === "ADMIN") {
-      window.location.href = "/admin/dashboard"; // Hard redirect
+      window.location.href = "/admin/dashboard";
     } else if (role === "DRIVER") {
       window.location.href = "/driver/dashboard";
     } else {
@@ -70,154 +65,137 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl w-full max-w-md border border-emerald-100">
-        {/* Logo and Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-2xl bg-emerald-600 text-white mb-4 shadow-lg shadow-emerald-200">
-            <svg
-              className="w-8 h-8"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
+    <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-4 md:p-6 font-sans">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        
+        {/* Decorative Header Bar */}
+        <div className="h-1.5 bg-emerald-600 w-full" />
+
+        <div className="p-8 md:p-10">
+          {/* Logo Section */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-100 mb-4 transition-transform hover:scale-105">
+              <Shield size={24} strokeWidth={2.5} />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              EcoRoute
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">
+              Resource & Waste Management Portal
+            </p>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-            EcoRoute
-          </h1>
-          <p className="text-slate-500 text-sm mt-1 font-medium">
-            Waste Management Portal
-          </p>
-        </div>
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          {/* Success Message */}
-          {message && (
-            <div className="flex items-center gap-2 p-4 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-2xl animate-in fade-in zoom-in-95">
-              <span>✅ {message}</span>
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* Status Messages */}
+            {message && (
+              <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-100 rounded-xl animate-in fade-in slide-in-from-top-1">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5" />
+                <p className="text-sm font-medium text-emerald-800">{message}</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl animate-in fade-in slide-in-from-top-1">
+                <AlertCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                <p className="text-sm font-medium text-red-800">{error}</p>
+              </div>
+            )}
+
+            {/* Email Field */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider ml-1">
+                Account Email
+              </label>
+              <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+                  <Mail size={18} />
+                </div>
+                <input
+                  type="email"
+                  required
+                  disabled={loading}
+                  placeholder="name@company.com"
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
             </div>
-          )}
 
-          {/* Error Message */}
-          {error && (
-            <div className="flex items-center gap-2 p-4 text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-2xl animate-in slide-in-from-top-2">
-              <span>⚠️ {error}</span>
+            {/* Password Field */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider ml-1">
+                Security Key
+              </label>
+              <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+                  <Lock size={18} />
+                </div>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  disabled={loading}
+                  placeholder="••••••••"
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-emerald-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
-          )}
 
-          {/* Email Input */}
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              required
+            {/* Submit Button */}
+            <button
+              type="submit"
               disabled={loading}
-              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm"
-              placeholder="name@email.com"
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-bold text-sm uppercase tracking-widest shadow-md shadow-emerald-100 active:scale-[0.99] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                "Authorize Login"
+              )}
+            </button>
+          </form>
 
-          {/* Password Input */}
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                disabled={loading}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm"
-                placeholder="••••••••"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
+          {/* Footer Navigation */}
+          <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col gap-4 text-center">
+            <p className="text-sm text-slate-500">
+              New to the platform?{" "}
+              <Link
+                href="/register"
+                className="text-emerald-600 hover:text-emerald-700 font-bold decoration-emerald-200 underline-offset-4 hover:underline"
               >
-                {showPassword ? (
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.956 9.956 0 0112 5c4.478 0 8.268-2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                    />
-                  </svg>
-                )}
-              </button>
+                Create an account
+              </Link>
+            </p>
+            <div className="flex justify-center gap-4 text-[11px] font-medium text-slate-400 uppercase tracking-widest">
+              <span className="hover:text-slate-600 cursor-pointer">Security Portal</span>
+              <span>•</span>
+              <span className="hover:text-slate-600 cursor-pointer">Help Center</span>
             </div>
           </div>
-
-          <button
-            disabled={loading}
-            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-slate-200 hover:bg-slate-800 active:scale-[0.98] transition-all disabled:opacity-50"
-          >
-            {loading ? "Verifying..." : "Sign In"}
-          </button>
-        </form>
-
-        <div className="mt-8 text-center">
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-tighter">
-            Citizen without an account?{" "}
-            <Link
-              href="/register"
-              className="text-emerald-600 hover:underline ml-1"
-            >
-              Register Now
-            </Link>
-          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// 2. Wrap the sub-component in a Suspense boundary for the main export
 export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center space-y-4">
-          <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest animate-pulse">
-            Loading Portal
+        <div className="min-h-[100dvh] bg-slate-50 flex flex-col items-center justify-center">
+          <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-4" />
+          <p className="text-sm font-bold text-slate-600 uppercase tracking-widest animate-pulse">
+            Establishing Secure Connection
           </p>
         </div>
       }

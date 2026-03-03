@@ -1,9 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react"; // Added useEffect
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import nextDynamic from "next/dynamic";
+import { 
+  LayoutDashboard, 
+  Map as MapIcon, 
+  Truck, 
+  Users, 
+  Recycle, 
+  AlertTriangle, 
+  LogOut, 
+  Menu,
+  ShieldCheck,
+  ChevronRight
+} from "lucide-react";
 
 // Views
 import Overview from "@/components/admin/Overview";
@@ -18,7 +30,7 @@ const DynamicBinMap = nextDynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="h-[600px] w-full bg-slate-50 animate-pulse rounded-[2.5rem]" />
+      <div className="h-[600px] w-full bg-slate-50 animate-pulse rounded-3xl m-6 border border-slate-100" />
     ),
   },
 );
@@ -30,11 +42,9 @@ export default function AdminDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [selectedCitizenData, setSelectedCitizenData] = useState<any | null>(
-    null,
-  );
+  const [selectedCitizenData, setSelectedCitizenData] = useState<any | null>(null);
 
-  // --- NEW: AUTH STATE ---
+  // --- AUTH STATE ---
   const [adminProfile, setAdminProfile] = useState<{
     full_name: string;
     role: string;
@@ -44,12 +54,10 @@ export default function AdminDashboard() {
   const router = useRouter();
   const supabase = createClient();
 
-  // --- FETCH REAL ADMIN DETAILS ---
+  // --- FETCH REAL ADMIN DETAILS (Functions Unchanged) ---
   useEffect(() => {
     const fetchAdminDetails = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
         const { data: profile } = await supabase
@@ -58,19 +66,15 @@ export default function AdminDashboard() {
           .eq("id", user.id)
           .single();
 
-        if (profile) {
-          setAdminProfile(profile);
-        }
+        if (profile) setAdminProfile(profile);
       } else {
-        // Redirect if no session found
         router.replace("/login");
       }
     };
-
     fetchAdminDetails();
   }, [supabase, router]);
 
-  // --- LOGOUT LOGIC ---
+  // --- LOGOUT LOGIC (Functions Unchanged) ---
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
@@ -88,149 +92,129 @@ export default function AdminDashboard() {
     setActiveTab("profile");
   };
 
+  // Updated Menu Items with Lucide Icons
   const menuItems = [
-    { id: "overview", label: "Overview", icon: "📊" },
-    { id: "map", label: "Bin Map", icon: "📍" },
-    { id: "drivers", label: "Driver Fleet", icon: "🚚" },
-    { id: "citizens", label: "Citizen Registry", icon: "👥" },
-    { id: "collections", label: "Collections", icon: "♻️" },
-    { id: "violations", label: "Violations", icon: "⚠️" },
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "map", label: "Bin Map", icon: MapIcon },
+    { id: "drivers", label: "Driver Fleet", icon: Truck },
+    { id: "citizens", label: "Citizen Registry", icon: Users },
+    { id: "collections", label: "Collections", icon: Recycle },
+    { id: "violations", label: "Violations", icon: AlertTriangle },
   ];
 
   const renderContent = () => {
     switch (activeTab) {
-      case "overview":
-        return (
-          <div className="p-6 lg:p-10">
-            <Overview />
-          </div>
-        );
-      case "map":
-        return <DynamicBinMap />;
-      case "drivers":
-        return (
-          <div className="p-6 lg:p-10">
-            <DriversList />
-          </div>
-        );
-      case "citizens":
-        return (
-          <div className="p-6 lg:p-10 w-full">
-            <CitizenRegistry onEditProfile={handleEditCitizenProfile} />
-          </div>
-        );
-      case "collections":
-        return (
-          <div className="p-6 lg:p-10">
-            <CollectionsView />
-          </div>
-        );
-      case "violations":
-        return (
-          <div className="p-6 lg:p-10">
-            <ViolationsView />
-          </div>
-        );
-      case "profile":
-        return (
-          <div className="p-6 lg:p-10 w-full">
-            <ProfileView
-              key={selectedCitizenData?.id || "admin"} // Important: Force re-render on ID change
-              initialData={selectedCitizenData}
-              onClearContext={() => {
-                setSelectedCitizenData(null);
-                // If we were editing a citizen, jump back to the registry tab
-                if (selectedCitizenData) {
-                  setActiveTab("citizens");
-                }
-              }}
-            />
-          </div>
-        );
-      default:
-        return <Overview />;
+      case "overview": return <div className="p-6 lg:p-8"><Overview /></div>;
+      case "map": return <div className="p-6 h-full"><DynamicBinMap /></div>;
+      case "drivers": return <div className="p-6 lg:p-8"><DriversList /></div>;
+      case "citizens": return <div className="p-6 lg:p-8 w-full"><CitizenRegistry onEditProfile={handleEditCitizenProfile} /></div>;
+      case "collections": return <div className="p-6 lg:p-8"><CollectionsView /></div>;
+      case "violations": return <div className="p-6 lg:p-8"><ViolationsView /></div>;
+      case "profile": return (
+        <div className="p-6 lg:p-8 w-full">
+          <ProfileView
+            key={selectedCitizenData?.id || "admin"}
+            initialData={selectedCitizenData}
+            onClearContext={() => {
+              setSelectedCitizenData(null);
+              if (selectedCitizenData) setActiveTab("citizens");
+            }}
+          />
+        </div>
+      );
+      default: return <Overview />;
     }
   };
 
-  const currentLabel =
-    menuItems.find((item) => item.id === activeTab)?.label || "Dashboard";
+  const currentLabel = menuItems.find((item) => item.id === activeTab)?.label || "Dashboard";
 
   return (
-    <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
+    <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden text-slate-900">
       {/* MOBILE SIDEBAR OVERLAY */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden transition-opacity"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[2000] lg:hidden animate-in fade-in duration-300"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}
+        className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-500 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100 border border-emerald-50">
-              <span className="text-white font-black text-xl">E</span>
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 border border-emerald-500/20">
+              <Recycle className="text-white" size={20} />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">
               EcoRoute
             </h1>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto">
-          <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-            System Admin
+        <nav className="flex-1 px-4 space-y-1.5 mt-2 overflow-y-auto custom-scrollbar">
+          <p className="px-5 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">
+            Management Portal
           </p>
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveTab(item.id);
-                setIsSidebarOpen(false);
-              }}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-200 group ${activeTab === item.id ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"}`}
-            >
-              <span
-                className={`text-xl ${activeTab === item.id ? "brightness-200" : "grayscale opacity-70"}`}
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-5 py-3.5 rounded-xl transition-all duration-300 group ${
+                  isActive 
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-100" 
+                    : "text-slate-500 hover:bg-slate-50 hover:text-emerald-600"
+                }`}
               >
-                {item.icon}
-              </span>
-              <span className="text-sm font-black uppercase tracking-tight">
-                {item.label}
-              </span>
-            </button>
-          ))}
+                <div className="flex items-center gap-4">
+                  <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                  <span className={`text-xs font-bold uppercase tracking-wider ${isActive ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}>
+                    {item.label}
+                  </span>
+                </div>
+                {isActive && <ChevronRight size={14} className="animate-in slide-in-from-left-2" />}
+              </button>
+            );
+          })}
         </nav>
 
-        <div className="p-6 shrink-0 border-t border-slate-50">
+        <div className="p-6 shrink-0">
           <button
             onClick={() => setShowLogoutModal(true)}
-            className="w-full flex items-center justify-center gap-3 px-4 py-4 rounded-[2rem] bg-red-50 text-red-600 hover:bg-red-100 transition-all font-black text-xs uppercase tracking-widest border border-red-100"
+            className="w-full flex items-center justify-center gap-3 px-4 py-4 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all font-bold text-[10px] uppercase tracking-widest border border-slate-100 hover:border-red-100 group"
           >
-            <span>Exit Portal</span>
+            <LogOut size={16} className="group-hover:-translate-x-1 transition-transform" />
+            <span>Terminate Session</span>
           </button>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden bg-slate-50/50">
         {/* HEADER */}
-        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
+        <header className="h-20 bg-white/70 backdrop-blur-xl border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-3 bg-slate-50 text-slate-600 rounded-2xl border border-slate-100 active:scale-95 transition-transform"
+              className="lg:hidden p-2.5 bg-white text-slate-600 rounded-xl border border-slate-200 shadow-sm active:scale-95 transition-all"
             >
-              ☰
+              <Menu size={20} />
             </button>
-            <div className="block">
-              <p className="text-[8px] md:text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
-                Admin Control
-              </p>
-              <h2 className="text-sm md:text-lg font-black text-slate-900 tracking-tight leading-tight">
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.15em]">
+                  System Live
+                </p>
+              </div>
+              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight uppercase">
                 {currentLabel}
               </h2>
             </div>
@@ -239,68 +223,44 @@ export default function AdminDashboard() {
           {/* DYNAMIC PROFILE BADGE */}
           <button
             onClick={() => {
-              if (typeof setSelectedCitizenData === "function")
-                setSelectedCitizenData(null);
+              setSelectedCitizenData(null);
               setActiveTab("profile");
             }}
-            className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.5rem] border transition-all duration-500 group/badge ${
+            className={`flex items-center gap-3 p-1.5 pr-4 rounded-xl border transition-all duration-300 group/badge ${
               activeTab === "profile"
-                ? "bg-slate-950 border-slate-900 shadow-[0_10px_20px_-5px_rgba(0,0,0,0.2)]"
-                : "bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"
+                ? "bg-slate-900 border-slate-800 shadow-lg shadow-slate-200"
+                : "bg-white border-slate-200 hover:border-emerald-200 hover:shadow-sm"
             }`}
           >
-            {/* Avatar Container with Glass Effect */}
-            <div
-              className={`w-9 h-9 md:w-11 md:h-11 rounded-xl flex items-center justify-center overflow-hidden border relative transition-all duration-500 ${
-                activeTab === "profile"
-                  ? "border-emerald-500/50 scale-105"
-                  : "border-slate-200"
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center overflow-hidden border transition-all ${
+                activeTab === "profile" ? "border-emerald-500/50" : "border-slate-100"
               }`}
             >
               {adminProfile?.avatar_url ? (
-                <img
-                  src={adminProfile.avatar_url}
-                  alt="Admin"
-                  className="w-full h-full object-cover"
-                />
+                <img src={adminProfile.avatar_url} alt="Admin" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-emerald-600 flex items-center justify-center">
-                  <span className="font-black text-white italic text-base">
+                  <span className="font-black text-white text-sm uppercase">
                     {adminProfile?.full_name?.charAt(0) || "A"}
                   </span>
                 </div>
               )}
-              {/* Inner Glow for active state */}
-              {activeTab === "profile" && (
-                <div className="absolute inset-0 bg-emerald-500/10 animate-pulse" />
-              )}
             </div>
 
-            {/* Identity Labels */}
             <div className="text-left hidden md:block">
-              <p
-                className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${
+              <p className={`text-[11px] font-bold uppercase tracking-tight transition-colors ${
                   activeTab === "profile" ? "text-white" : "text-slate-900"
                 }`}
               >
                 {adminProfile?.full_name || "System Admin"}
               </p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <div
-                  className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                    activeTab === "profile"
-                      ? "bg-emerald-400"
-                      : "bg-emerald-500"
-                  }`}
-                />
-                <p
-                  className={`text-[8px] font-bold uppercase tracking-[0.15em] transition-colors duration-300 ${
-                    activeTab === "profile"
-                      ? "text-emerald-400/80"
-                      : "text-slate-400"
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={10} className={activeTab === "profile" ? "text-emerald-400" : "text-emerald-600"} />
+                <p className={`text-[9px] font-bold uppercase tracking-widest ${
+                    activeTab === "profile" ? "text-slate-400" : "text-slate-500"
                   }`}
                 >
-                  {adminProfile?.role || "Authorized"}
+                  {adminProfile?.role || "Administrator"}
                 </p>
               </div>
             </div>
@@ -308,40 +268,39 @@ export default function AdminDashboard() {
         </header>
 
         {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto">{renderContent()}</div>
+        <div className="flex-1 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-500">
+          {renderContent()}
+        </div>
       </main>
 
       {/* LOGOUT MODAL */}
       {showLogoutModal && (
-        <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
-            onClick={() => !isLoggingOut && setShowLogoutModal(false)}
-          />
-          <div className="relative w-full max-w-sm bg-white rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 border border-slate-100">
             <div className="text-center">
-              <span className="text-5xl block mb-4">🚪</span>
+              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <LogOut size={32} />
+              </div>
               <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
-                End Admin Session?
+                End Session?
               </h2>
-              <p className="text-sm text-slate-500 mb-8">
-                You will need to re-authenticate to access the management
-                portal.
+              <p className="text-xs font-medium text-slate-500 mb-8 leading-relaxed">
+                You are about to exit the management portal. All active administrative controls will be locked.
               </p>
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
                 <button
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  className="w-full py-5 bg-red-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-red-100 active:scale-95 transition-all disabled:opacity-50"
+                  className="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-100 hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50"
                 >
-                  {isLoggingOut ? "Closing..." : "Confirm & Logout"}
+                  {isLoggingOut ? "Closing Session..." : "Confirm & Logout"}
                 </button>
                 <button
                   onClick={() => setShowLogoutModal(false)}
                   disabled={isLoggingOut}
-                  className="w-full py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase active:scale-95 transition-all disabled:opacity-50"
+                  className="w-full py-4 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
                 >
-                  Stay Logged In
+                  Stay Active
                 </button>
               </div>
             </div>

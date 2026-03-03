@@ -3,10 +3,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import AddViolationForm from "./AddViolationForm";
-import { 
-  // ... your other existing icons like Camera, ShieldCheck, etc.
-  Search, 
-  ChevronDown 
+import {
+  Search,
+  ChevronDown,
+  Calendar,
+  MapPin,
+  AlertCircle,
+  Archive,
+  History,
+  Plus,
+  ArrowUpDown,
 } from "lucide-react";
 
 const supabase = createClient();
@@ -15,7 +21,7 @@ export default function ViolationsView() {
   const [viewMode, setViewMode] = useState<"active" | "deleted">("active");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
-  const [filterStatus, setFilterStatus] = useState<string>("All"); // Status Filter State
+  const [filterStatus, setFilterStatus] = useState<string>("All");
   const [selectedViolation, setSelectedViolation] = useState<any | null>(null);
   const [violations, setViolations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -44,7 +50,6 @@ export default function ViolationsView() {
       )
       .order("created_at", { ascending: sortOrder === "asc" });
 
-    // Apply Server-side Status Filter
     if (filterStatus !== "All") {
       query = query.eq("status", filterStatus);
     }
@@ -73,11 +78,11 @@ export default function ViolationsView() {
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "Resolved":
-        return "bg-emerald-50 text-emerald-600 border-emerald-100";
+        return "bg-emerald-50 text-emerald-700 border-emerald-100";
       case "Under Review":
-        return "bg-amber-50 text-amber-600 border-amber-200";
+        return "bg-amber-50 text-amber-700 border-amber-100";
       default:
-        return "bg-red-50 text-red-600 border-red-100";
+        return "bg-red-50 text-red-700 border-red-100";
     }
   };
 
@@ -104,7 +109,7 @@ export default function ViolationsView() {
       .update({ status: newStatus })
       .eq("id", id);
     if (!error) {
-      fetchViolations(); // Refresh to apply current filters
+      fetchViolations();
       setSelectedViolation(null);
     }
   };
@@ -160,240 +165,304 @@ export default function ViolationsView() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-700 pb-20">
+    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
       {/* --- HEADER --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 px-2">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter italic uppercase">
-            Enforcement Hub
-          </h1>
-          <p className="text-[10px] font-black text-slate-400 tracking-[0.4em] uppercase mt-1 leading-none">
+          <p className="text-[10px] font-black text-slate-400 tracking-[0.4em] uppercase mt-2">
             EcoRoute Regulatory Control
           </p>
         </div>
-        <div className="flex gap-2 w-full md:w-auto">
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="w-full lg:w-auto px-8 py-4 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3"
+        >
+          <Plus size={16} strokeWidth={3} />
+          Report Incident
+        </button>
+      </div>
+
+      {/* --- DETACHED NAVIGATION & SEARCH --- */}
+      <div className="flex flex-col xl:flex-row gap-4 items-stretch px-2">
+        {/* COMBINED SEARCH & SORT BLOCK */}
+        <div className="relative flex items-center group w-full bg-white border border-slate-200 rounded-2xl shadow-sm focus-within:border-emerald-500 focus-within:ring-4 ring-emerald-500/5 transition-all duration-300">
+          {/* SEARCH ICON */}
+          <div className="pl-5 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+            <Search size={18} strokeWidth={2.5} />
+          </div>
+
+          {/* INPUT FIELD */}
+          <input
+            type="text"
+            placeholder="Search records..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 h-14 pl-4 pr-2 bg-transparent text-[11px] font-bold uppercase tracking-widest outline-none placeholder:text-slate-300 text-slate-900"
+          />
+
+          {/* VERTICAL DIVIDER */}
+          <div className="h-8 w-[1px] bg-slate-100 mx-2" />
+
+          {/* INTEGRATED SORT TOGGLE */}
           <button
-            onClick={() =>
-              setViewMode(viewMode === "active" ? "deleted" : "active")
-            }
-            className={`flex-1 md:flex-none px-4 md:px-6 py-4 rounded-[1.2rem] md:rounded-[1.5rem] text-[9px] md:text-[10px] font-black uppercase transition-all border-2 ${
-              viewMode === "deleted"
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700 shadow-inner"
-                : "bg-white border-slate-100 text-slate-400"
+            onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
+            className="h-14 px-5 flex items-center gap-3 hover:bg-slate-50 rounded-r-2xl transition-all active:scale-95 border-l border-transparent"
+          >
+            <ArrowUpDown
+              size={14}
+              strokeWidth={3}
+              className={
+                sortOrder === "desc" ? "text-emerald-600" : "text-slate-400"
+              }
+            />
+            <span className="text-[9px] font-black uppercase text-slate-600 hidden sm:inline tracking-tighter">
+              {sortOrder === "desc" ? "Newest" : "Oldest"}
+            </span>
+          </button>
+        </div>
+
+        {/* TAB SWITCHER BLOCK */}
+        <div className="flex bg-white border border-slate-200 p-1.5 rounded-2xl shadow-sm shrink-0 items-stretch h-14">
+          <button
+            onClick={() => setViewMode("active")}
+            className={`flex-1 lg:flex-none px-8 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-3 ${
+              viewMode === "active"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm"
+                : "text-slate-400 hover:text-slate-600"
             }`}
           >
-            {viewMode === "active" ? "📜 Archive" : "🔙 Active"}
+            <History size={14} />
+            <span>Active</span>
           </button>
+
           <button
-            onClick={() => setShowAddModal(true)}
-            className="flex-1 md:flex-none px-6 md:px-8 py-4 bg-emerald-600 text-white rounded-[1.2rem] md:rounded-[1.5rem] text-[9px] md:text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-100"
+            onClick={() => setViewMode("deleted")}
+            className={`flex-1 lg:flex-none px-8 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-3 ${
+              viewMode === "deleted"
+                ? "bg-slate-900 text-white shadow-lg"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
           >
-            + Incident
+            <Archive size={14} />
+            <span>Archive</span>
           </button>
         </div>
       </div>
 
-      {/* --- SEARCH, SORT & STATUS FILTERS --- */}
-      <div className="px-2 space-y-4">
-        <div className="flex gap-3 items-stretch h-14 md:h-16">
-          {/* SEARCH INPUT CONTAINER */}
-          <div className="relative flex-1 group">
-            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
-              <Search size={18} />
-            </div>
-            <input
-              type="text"
-              placeholder="Search residents..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-full pl-14 pr-6 bg-white border-2 border-slate-100 rounded-[1.5rem] md:rounded-[2rem] text-xs font-black text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 ring-emerald-500/5 transition-all shadow-sm placeholder:text-slate-300 placeholder:font-bold"
-            />
-          </div>
-
-          {/* SORT TOGGLE BUTTON */}
-          <button
-            onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
-            className="px-6 md:px-8 bg-white border-2 border-slate-100 rounded-[1.5rem] md:rounded-[2rem] hover:border-emerald-500 hover:bg-emerald-50/30 transition-all shadow-sm flex items-center gap-3 group active:scale-95"
-          >
-            <div className="flex flex-col items-start hidden md:block">
-              <span className="text-[8px] font-black uppercase text-slate-400 leading-none tracking-widest">
-                Sort Order 
-              </span>
-              <span className="text-[10px] font-black uppercase text-slate-900 group-hover:text-emerald-600 transition-colors">
-                {sortOrder === "desc" ? " Newest First" : " Oldest First"}
-              </span>
-            </div>
-
-            <div
-              className={`transition-transform duration-300 ${sortOrder === "asc" ? "rotate-180" : "rotate-0 text-emerald-600"}`}
-            >
-              <ChevronDown size={20} strokeWidth={3} />
-            </div>
-          </button>
-        </div>
-
-        {/* STATUS FILTER CHIPS */}
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+      {/* --- STATUS FILTER CHIPS (ONLY FOR ACTIVE) --- */}
+      {viewMode === "active" && (
+        <div className="flex gap-2 overflow-x-auto px-2 no-scrollbar">
           {["All", "Pending", "Under Review", "Resolved"].map((status) => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
-              className={`whitespace-nowrap px-6 py-3 rounded-full text-[9px] font-black uppercase tracking-widest transition-all border-2 ${
+              className={`whitespace-nowrap px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                 filterStatus === status
-                  ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100"
-                  : "bg-white border-slate-100 text-slate-400 hover:border-emerald-200"
+                  ? "bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-100"
+                  : "bg-white border-slate-200 text-slate-400 hover:border-emerald-300"
               }`}
             >
               {status}
             </button>
           ))}
         </div>
-      </div>
+      )}
 
       {/* --- GRID --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 px-2">
-        {viewMode === "active"
-          ? violations
-              .filter((v) =>
-                (v.profiles?.full_name || "")
-                  .toLowerCase()
-                  .includes(searchTerm.toLowerCase()),
-              )
-              .map((v) => (
-                <div
-                  key={v.id}
-                  onClick={() => setSelectedViolation(v)}
-                  className="bg-white rounded-[2rem] md:rounded-[2.5rem] border border-slate-100 shadow-sm p-6 md:p-8 hover:shadow-2xl transition-all cursor-pointer group relative overflow-hidden"
-                >
-                  <span
-                    className={`text-[7px] md:text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${getStatusStyle(v.status)}`}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-2">
+        {isLoading
+          ? [...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                className="h-48 bg-slate-50 rounded-[2.5rem] animate-pulse border border-slate-100"
+              />
+            ))
+          : viewMode === "active"
+            ? violations
+                .filter((v) =>
+                  (v.profiles?.full_name || "")
+                    .toLowerCase()
+                    .includes(searchTerm.toLowerCase()),
+                )
+                .map((v) => (
+                  <div
+                    key={v.id}
+                    onClick={() => setSelectedViolation(v)}
+                    className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-2xl hover:border-emerald-100 transition-all cursor-pointer group relative overflow-hidden"
                   >
-                    {v.status}
-                  </span>
-                  <h3 className="font-black text-lg md:text-xl mt-4 text-slate-900 group-hover:text-emerald-600 italic uppercase leading-none">
-                    {v.profiles?.full_name}
-                  </h3>
-                  <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    {v.type}
+                    <div className="flex justify-between items-start mb-6">
+                      <span
+                        className={`text-[8px] font-black px-3 py-1.5 rounded-lg uppercase tracking-widest border ${getStatusStyle(v.status)}`}
+                      >
+                        {v.status}
+                      </span>
+                      <AlertCircle
+                        size={18}
+                        className="text-slate-200 group-hover:text-red-500 transition-colors"
+                      />
+                    </div>
+                    <h3 className="font-black text-xl text-slate-900 group-hover:text-emerald-600 italic uppercase leading-tight">
+                      {v.profiles?.full_name}
+                    </h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">
+                      {v.type}
+                    </p>
+
+                    <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between text-[9px] font-black text-slate-400 uppercase">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={12} className="text-emerald-500" />
+                        <span>Brgy. {getResidentBarangay(v)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar size={12} />
+                        <span>
+                          {new Date(v.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+            : auditLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-xl"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <h4 className="text-white font-black text-lg uppercase italic leading-tight">
+                      {log.metadata?.resident}
+                    </h4>
+                    <Archive size={18} className="text-emerald-500/50" />
+                  </div>
+                  <p className="text-emerald-400 text-[10px] font-bold uppercase mb-8 italic opacity-80 leading-relaxed">
+                    "{log.reason}"
                   </p>
-                  <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-[9px] font-black text-slate-300 uppercase">
-                    <span>📍 Brgy. {getResidentBarangay(v)}</span>
-                    <span className="text-[7px] font-bold opacity-60">
-                      {new Date(v.created_at).toLocaleDateString()}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRestore(log);
+                    }}
+                    disabled={isRestoring}
+                    className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all disabled:opacity-50"
+                  >
+                    {isRestoring ? "Restoring..." : "Restore Record"}
+                  </button>
+                </div>
+              ))}
+      </div>
+
+      {/* --- MODAL: VIOLATION DETAILS (CLEAN DETACHED STYLE) --- */}
+      {selectedViolation && !showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-6">
+          {/* Clean backdrop with light blur */}
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+            onClick={() => setSelectedViolation(null)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-400 flex flex-col max-h-[90vh]">
+            {/* 1. STATUS HEADER STRIP */}
+            <div
+              className={`h-1.5 w-full ${selectedViolation.status === "Resolved" ? "bg-emerald-500" : "bg-amber-500"}`}
+            />
+
+            <div className="p-6 md:p-10 overflow-y-auto no-scrollbar">
+              {/* 2. TOP ALIGNMENT: NAME & ARCHIVE */}
+              <div className="flex justify-between items-start mb-8">
+                <div className="space-y-1">
+                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase italic">
+                    {selectedViolation.profiles?.full_name}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 text-[9px] font-black rounded border ${getStatusStyle(selectedViolation.status)} uppercase tracking-widest`}
+                    >
+                      {selectedViolation.status}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l pl-2 border-slate-200">
+                      Ref: #{selectedViolation.id.slice(0, 8)}
                     </span>
                   </div>
                 </div>
-              ))
-          : auditLogs.map((log) => (
-              <div
-                key={log.id}
-                className="bg-slate-900 rounded-[2rem] p-6 md:p-8 border border-slate-800"
-              >
-                <h4 className="text-white font-black text-lg uppercase italic mb-1">
-                  {log.metadata?.resident}
-                </h4>
-                <p className="text-emerald-500 text-[10px] font-bold uppercase mb-4 italic opacity-80">
-                  "{log.reason}"
-                </p>
+
                 <button
-                  onClick={() => handleRestore(log)}
-                  disabled={isRestoring}
-                  className="w-full py-4 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-slate-100 shadow-sm"
                 >
-                  Restore
+                  <Archive size={20} />
                 </button>
               </div>
-            ))}
-      </div>
 
-      {/* --- MODAL: VIOLATION DETAILS --- */}
-      {selectedViolation && !showDeleteConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-4">
-          <div
-            className="absolute inset-0 bg-emerald-950/60 backdrop-blur-sm"
-            onClick={() => setSelectedViolation(null)}
-          />
-          <div
-            className={`relative w-full max-w-2xl bg-white rounded-t-[2.5rem] md:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 border-t-[10px] ${getStatusBorder(selectedViolation.status)} max-h-[90vh] flex flex-col`}
-          >
-            <div className="p-6 md:p-14 overflow-y-auto">
-              <div className="flex justify-between items-start mb-8 md:mb-12">
-                <div>
-                  <span
-                    className={`px-2 py-1 text-[7px] md:text-[8px] font-black rounded-full uppercase tracking-widest border ${getStatusStyle(selectedViolation.status)}`}
-                  >
-                    {selectedViolation.status}
-                  </span>
-                  <h2 className="text-2xl md:text-5xl font-black text-slate-900 italic uppercase leading-none mt-4">
-                    {selectedViolation.profiles?.full_name}
-                  </h2>
-                  <p className="text-emerald-500 font-black text-[10px] md:text-[12px] uppercase tracking-widest mt-1 italic">
+              {/* 3. CORE DATA GRID (DETACHED STYLE) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+                <div className="bg-white border border-slate-100 p-4 rounded-xl shadow-sm">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                    Violation Type
+                  </p>
+                  <p className="text-[11px] font-bold text-slate-900 uppercase truncate">
                     {selectedViolation.type}
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="p-4 md:p-6 bg-emerald-50 text-emerald-600 rounded-[1.5rem] md:rounded-[2.5rem] shadow-sm active:scale-90 transition-transform"
-                >
-                  🗑️
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 md:gap-4 mb-8">
-                <div className="bg-emerald-50/50 p-4 md:p-6 rounded-[1.5rem] md:rounded-[2.5rem] border border-emerald-100">
-                  <p className="text-[7px] md:text-[9px] font-black text-emerald-600 uppercase mb-1 tracking-widest">
-                    Barangay
+                <div className="bg-white border border-slate-100 p-4 rounded-xl shadow-sm">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                    Jurisdiction
                   </p>
-                  <p className="text-xs md:text-sm font-black uppercase text-slate-900 truncate">
+                  <p className="text-[11px] font-bold text-slate-900 uppercase">
                     Brgy. {getResidentBarangay(selectedViolation)}
                   </p>
                 </div>
-                <div className="bg-emerald-50/50 p-4 md:p-6 rounded-[1.5rem] md:rounded-[2.5rem] border border-emerald-100">
-                  <p className="text-[7px] md:text-[9px] font-black text-emerald-600 uppercase mb-1 tracking-widest">
-                    Warnings
+                <div className="bg-white border border-slate-100 p-4 rounded-xl shadow-sm">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                    Total Warnings
                   </p>
-                  <p className="text-xs md:text-sm font-black uppercase text-slate-900">
-                    {selectedViolation.profiles?.warning_count || 0}
-                  </p>
-                </div>
-              </div>
-
-              <div className="relative mb-8 md:mb-12 group">
-                <div className="absolute -top-2.5 left-6 px-3 py-0.5 bg-slate-900 text-white text-[7px] md:text-[8px] font-black rounded-full uppercase tracking-widest z-10">
-                  Incident Notes
-                </div>
-                <div className="p-6 md:p-10 bg-slate-50 rounded-[2rem] md:rounded-[3rem] border-2 border-slate-100 shadow-inner">
-                  <p className="text-xs md:text-base font-bold text-slate-700 italic leading-relaxed uppercase">
-                    "
-                    {selectedViolation.description ||
-                      "No specific incident notes recorded."}
-                    "
+                  <p className="text-[11px] font-bold text-slate-900 uppercase">
+                    {selectedViolation.profiles?.warning_count || 0} Record/s
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-2 md:gap-3">
-                <button
-                  onClick={() =>
-                    handleUpdateStatus(selectedViolation.id, "Under Review")
-                  }
-                  className="flex-1 py-4 md:py-6 bg-amber-400 text-white rounded-[1.2rem] md:rounded-[2rem] font-black text-[10px] md:text-[11px] uppercase tracking-[0.2em] shadow-lg shadow-amber-100 active:scale-95 transition-all"
-                >
-                  Review
-                </button>
-                <button
-                  onClick={() =>
-                    handleUpdateStatus(selectedViolation.id, "Resolved")
-                  }
-                  className="flex-1 py-4 md:py-6 bg-emerald-600 text-white rounded-[1.2rem] md:rounded-[2rem] font-black text-[10px] md:text-[11px] uppercase tracking-[0.2em] shadow-lg shadow-emerald-200 active:scale-95 transition-all"
-                >
-                  Resolve
-                </button>
+              {/* 4. INCIDENT DESCRIPTION (UNIFIED BOX) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mb-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertCircle size={14} className="text-slate-400" />
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                    Incident Narrative
+                  </span>
+                </div>
+                <p className="text-xs md:text-sm font-medium text-slate-700 leading-relaxed italic border-l-2 border-emerald-500 pl-4">
+                  {selectedViolation.description ||
+                    "No specific details provided for this entry."}
+                </p>
+              </div>
+
+              {/* 5. PROFESSIONAL ACTION TRAY */}
+              <div className="flex flex-col gap-3">
+                {/* Primary Actions Grid - Side by Side even on Mobile */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() =>
+                      handleUpdateStatus(selectedViolation.id, "Under Review")
+                    }
+                    className="h-14 bg-white border border-slate-200 text-slate-700 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest hover:bg-slate-50 hover:border-amber-400 transition-all active:scale-95 shadow-sm flex items-center justify-center text-center px-2"
+                  >
+                    Move to Review
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      handleUpdateStatus(selectedViolation.id, "Resolved")
+                    }
+                    className="h-14 bg-emerald-600 text-white rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center text-center px-2"
+                  >
+                    Mark Resolved
+                  </button>
+                </div>
+
+                {/* Close Button - Full width on mobile for easy dismissal */}
                 <button
                   onClick={() => setSelectedViolation(null)}
-                  className="flex-1 py-4 md:py-6 bg-slate-900 text-white rounded-[1.2rem] md:rounded-[2rem] font-black text-[10px] md:text-[11px] uppercase tracking-[0.2em] transition-all"
+                  className="w-full sm:w-auto sm:self-end h-12 px-10 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95"
                 >
-                  Close
+                  Done
                 </button>
               </div>
             </div>
@@ -401,38 +470,56 @@ export default function ViolationsView() {
         </div>
       )}
 
-      {/* --- DELETE CONFIRMATION --- */}
+      {/* --- DELETE/ARCHIVE CONFIRMATION (DETACHED STYLE) --- */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          {/* Darker backdrop for higher stakes action */}
           <div
-            className="absolute inset-0 bg-emerald-950/60 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300"
             onClick={() => setShowDeleteConfirm(false)}
           />
-          <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] p-8 md:p-10 shadow-2xl animate-in zoom-in-95 border border-emerald-100">
-            <h3 className="text-lg md:text-xl font-black text-slate-900 text-center mb-6 uppercase italic tracking-tighter text-emerald-700">
-              Audit Reason
-            </h3>
-            <textarea
-              value={deleteReason}
-              onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="Why is this record being archived?"
-              className="w-full p-5 bg-emerald-50/30 border-2 border-emerald-100 rounded-[1.5rem] text-xs font-bold outline-none mb-6 resize-none shadow-inner"
-              rows={3}
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 py-4 text-slate-400 font-black text-[10px] uppercase tracking-widest"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="flex-[2] py-4 bg-emerald-600 text-white rounded-[1.5rem] font-black text-[10px] uppercase shadow-lg shadow-emerald-100"
-              >
-                {isDeleting ? "..." : "Archive"}
-              </button>
+
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-100">
+            {/* Visual Danger Indicator */}
+            <div className="h-1.5 w-full bg-red-600" />
+
+            <div className="p-8 md:p-10">
+              <div className="text-center mb-8">
+                <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
+                  Archive Incident
+                </h3>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                  Fleet Database Neutralization
+                </p>
+              </div>
+
+              <div className="relative group mb-8">
+                <textarea
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="STATE REASON FOR ARCHIVAL..."
+                  className="w-full p-5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider outline-none resize-none focus:bg-white focus:border-red-500 focus:ring-4 ring-red-500/5 transition-all placeholder:text-slate-300"
+                  rows={3}
+                />
+              </div>
+
+              {/* ACTION TRAY: Grid ensures inline buttons on mobile */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="h-14 bg-white border border-slate-200 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 hover:text-slate-600 transition-all active:scale-95"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="h-14 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 shadow-lg shadow-red-200 transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
+                >
+                  {isDeleting ? "Processing..." : "Confirm"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
