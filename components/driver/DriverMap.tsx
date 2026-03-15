@@ -5,7 +5,6 @@ import { createClient } from "@/utils/supabase/client";
 import DriverMapDisplay from "./DriverMapDisplay";
 import DriverSidebar from "./DriverSidebar";
 import NavigationControls from "../ui/NavigationControls";
-import { getDistance } from "../map/MapAssets";
 import "leaflet/dist/leaflet.css";
 
 const supabase = createClient();
@@ -19,10 +18,20 @@ interface BinRow {
   battery_level: number;
 }
 
+// FIX #3: Typed history entry so it can be populated properly
+interface CollectionLog {
+  id: number;
+  name: string;
+  time: string;
+}
+
 export default function DriverMap() {
   // --- Data State ---
   const [bins, setBins] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
+
+  // FIX #3: history is now populated via addToHistory, not just cleared
+  const [history, setHistory] = useState<CollectionLog[]>([]);
+
   const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
   const [heading, setHeading] = useState(0);
   const [routeKey, setRouteKey] = useState(0);
@@ -37,7 +46,7 @@ export default function DriverMap() {
   const [useFence, setUseFence] = useState(true);
   const [mapStyle, setMapStyle] = useState("satellite-streets-v12" as any);
 
-  // --- UI Visibility States (Fixes the "Not Appearing" issue) ---
+  // --- UI Visibility States ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
 
@@ -47,30 +56,40 @@ export default function DriverMap() {
 
     if (data) {
       const rows = data as BinRow[];
-      setBins(rows.map((b) => ({
-        id: b.id,
-        name: b.name,
-        lat: b.lat,
-        lng: b.lng,
-        fillLevel: b.fill_level,
-        batteryLevel: b.battery_level,
-      })));
+      setBins(
+        rows.map((b) => ({
+          id: b.id,
+          name: b.name,
+          lat: b.lat,
+          lng: b.lng,
+          fillLevel: b.fill_level,
+          batteryLevel: b.battery_level,
+        }))
+      );
     }
   }, []);
 
   useEffect(() => {
     fetchBins();
-    const channel = supabase.channel("realtime-bins")
-      .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, fetchBins)
+    const channel = supabase
+      .channel("realtime-bins")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bins" },
+        fetchBins
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchBins]);
 
   const toggleTracking = () => {
     if (isTracking) {
-      if (geoWatchId) navigator.geolocation.clearWatch(geoWatchId);
+      if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
       setIsTracking(false);
       setDriverPos(null);
+      setGeoWatchId(null);
     } else {
       setIsTracking(true);
       const id = navigator.geolocation.watchPosition(
@@ -78,13 +97,19 @@ export default function DriverMap() {
           setDriverPos([pos.coords.latitude, pos.coords.longitude]);
           if (pos.coords.heading !== null) setHeading(pos.coords.heading);
         },
-        null, { enableHighAccuracy: true }
+        (err) => console.error("Geolocation error:", err),
+        { enableHighAccuracy: true }
       );
       setGeoWatchId(id);
     }
   };
 
-  const clearHistory = () => setHistory([]);
+  // FIX #3: Exposed so child components (e.g. DriverCollectionNode) can log entries
+  const addToHistory = useCallback((entry: CollectionLog) => {
+    setHistory((prev) => [entry, ...prev]);
+  }, []);
+
+  const clearHistory = useCallback(() => setHistory([]), []);
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-slate-950 overflow-hidden relative">
@@ -94,6 +119,7 @@ export default function DriverMap() {
         heading={heading}
       />
 
+      {/* FIX #1: isTracking is now correctly passed to DriverMapDisplay */}
       <DriverMapDisplay
         bins={bins}
         driverPos={driverPos}
@@ -106,8 +132,10 @@ export default function DriverMap() {
         useFence={useFence}
         mapStyle={mapStyle}
         onRouteUpdate={setEta}
+        isTracking={isTracking}
       />
 
+      {/* FIX #2: onClearHistory is now passed so DriverSidebar can forward it */}
       <DriverSidebar
         // 1. Data Props
         bins={bins}
@@ -115,13 +143,13 @@ export default function DriverMap() {
         history={history}
         isTracking={isTracking}
         onClearHistory={clearHistory}
-        
+
         // 2. Action Props
         onStartTracking={toggleTracking}
         onStopTracking={toggleTracking}
         onRefresh={() => setRouteKey((k) => k + 1)}
-        
-        // 3. Settings Props (Fixes the crash)
+
+        // 3. Settings Props
         mapStyle={mapStyle}
         setMapStyle={setMapStyle}
         routingMode={routingMode}
@@ -131,11 +159,14 @@ export default function DriverMap() {
         useFence={useFence}
         setUseFence={setUseFence}
 
-        // 4. UI Visibility Props (Fixes the sheet appearing)
+        // 4. UI Visibility Props
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         isDashboardVisible={isDashboardVisible}
         setIsDashboardVisible={setIsDashboardVisible}
+
+        // FIX #3: expose addToHistory for collection logging
+        onAddToHistory={addToHistory}
       />
     </div>
   );

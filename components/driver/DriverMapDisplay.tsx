@@ -1,12 +1,35 @@
 "use client";
-import { useEffect } from "react";
+
+import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import BinMarker from "./BinMarker";
 import RoutingLayer from "./RoutingLayer";
 import { LUPON_CENTER } from "../map/MapAssets";
 
-// --- Sub-component to handle camera movement ---
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DriverMapDisplayProps {
+  bins: any[];
+  driverPos: [number, number] | null;
+  heading: number;
+  selectedBinId: number | null;
+  setSelectedBinId: (id: number) => void;
+  routeKey: number;
+  mode: "fastest" | "priority";
+  maxDetour: number;
+  useFence: boolean;
+  mapStyle: string;
+  onRouteUpdate: (stats: { dist: string; time: string }) => void;
+  isTracking: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAP CONTROLLER  — keeps camera on driver while tracking
+// ─────────────────────────────────────────────────────────────────────────────
+
 function MapController({
   center,
   isTracking,
@@ -15,16 +38,207 @@ function MapController({
   isTracking: boolean;
 }) {
   const map = useMap();
-
   useEffect(() => {
-    if (isTracking && center) {
-      // "flyTo" provides a smooth animation perfect for a high-end feel
+    if (isTracking && center)
       map.flyTo(center, map.getZoom(), { animate: true, duration: 1.5 });
-    }
   }, [center, isTracking, map]);
-
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STOP ORDER LEGEND
+//
+// Floats over the map (top-right). Shows the A*-optimised visit sequence as
+// a compact numbered list. Collapses to a single chevron button on mobile.
+// Populated via the `onOrderUpdate` callback from RoutingLayer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StopOrderLegend({
+  orderedBins,
+  mode,
+  onSelect,
+  selectedBinId,
+}: {
+  orderedBins: any[];
+  mode: "fastest" | "priority";
+  onSelect: (id: number) => void;
+  selectedBinId: number | null;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (orderedBins.length === 0) return null;
+
+  const accent = mode === "priority" ? "#f97316" : "#059669";
+  const accentBg = mode === "priority" ? "rgba(249,115,22,.12)" : "rgba(5,150,105,.12)";
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 16,
+        right: 16,
+        zIndex: 1000,
+        background: "rgba(255,255,255,0.96)",
+        backdropFilter: "blur(8px)",
+        borderRadius: 16,
+        boxShadow: "0 4px 24px rgba(0,0,0,.18)",
+        border: `1.5px solid ${accent}44`,
+        minWidth: collapsed ? "auto" : 210,
+        maxWidth: 240,
+        overflow: "hidden",
+        fontFamily: "sans-serif",
+        transition: "min-width .2s",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px 8px",
+          borderBottom: collapsed ? "none" : `1px solid ${accent}33`,
+          background: accentBg,
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {/* Route icon */}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="3" cy="13" r="2" fill={accent} />
+            <circle cx="13" cy="3" r="2" fill={accent} />
+            <path
+              d="M3 11 C3 7 13 9 13 5"
+              stroke={accent}
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: accent,
+              letterSpacing: ".06em",
+              textTransform: "uppercase",
+            }}
+          >
+            {collapsed ? `${orderedBins.length} stops` : "A* Route Order"}
+          </span>
+        </div>
+        <span style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
+          {collapsed ? "▼" : "▲"}
+        </span>
+      </div>
+
+      {/* Stop list */}
+      {!collapsed && (
+        <ul style={{ margin: 0, padding: "6px 0 8px", listStyle: "none" }}>
+          {orderedBins.map((bin: any, idx: number) => {
+            const urgent = bin.fillLevel >= 80;
+            const isSelected = bin.id === selectedBinId;
+            const badgeBg = isSelected
+              ? "#2563eb"
+              : urgent
+              ? "#dc2626"
+              : accent;
+
+            return (
+              <li
+                key={bin.id}
+                onClick={() => onSelect(bin.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "5px 14px",
+                  cursor: "pointer",
+                  background: isSelected ? `${accent}18` : "transparent",
+                  transition: "background .15s",
+                }}
+                onMouseEnter={(e) =>
+                  ((e.currentTarget as HTMLElement).style.background = `${accent}12`)
+                }
+                onMouseLeave={(e) =>
+                  ((e.currentTarget as HTMLElement).style.background = isSelected
+                    ? `${accent}18`
+                    : "transparent")
+                }
+              >
+                {/* Step badge */}
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: "50%",
+                    background: badgeBg,
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {idx + 1}
+                </div>
+
+                {/* Name + fill */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#1e293b",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {bin.name ?? `Bin ${bin.id}`}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 10, color: urgent ? "#dc2626" : "#64748b" }}>
+                    {urgent ? "⚠ " : ""}
+                    {bin.fillLevel}% full
+                  </p>
+                </div>
+
+                {/* Arrow */}
+                {idx < orderedBins.length - 1 && (
+                  <span style={{ fontSize: 10, color: "#94a3b8" }}>›</span>
+                )}
+              </li>
+            );
+          })}
+
+          {/* Footer totals */}
+          <li
+            style={{
+              borderTop: `1px solid ${accent}22`,
+              margin: "4px 14px 0",
+              paddingTop: 6,
+              fontSize: 10,
+              color: "#64748b",
+              fontWeight: 600,
+              letterSpacing: ".04em",
+            }}
+          >
+            {orderedBins.length} STOPS · {mode === "priority" ? "PRIORITY" : "FASTEST"} MODE
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function DriverMapDisplay({
   bins,
@@ -38,8 +252,16 @@ export default function DriverMapDisplay({
   useFence,
   mapStyle,
   onRouteUpdate,
-  isTracking, // Pass this from the parent
-}: any) {
+  isTracking,
+}: DriverMapDisplayProps) {
+  // Populated by RoutingLayer via onOrderUpdate once A* resolves
+  const [orderedBins, setOrderedBins] = useState<any[]>([]);
+
+  // Clear legend whenever the route is recalculated
+  useEffect(() => {
+    setOrderedBins([]);
+  }, [routeKey, mode, driverPos]);
+
   return (
     <div className="absolute inset-0 md:relative md:flex-1 h-full order-1 overflow-hidden">
       <MapContainer
@@ -48,40 +270,37 @@ export default function DriverMapDisplay({
         maxZoom={22}
         zoomControl={false}
         className="h-full w-full"
-        // Improvement: Use canvas for smoother marker rendering if bin count grows
         preferCanvas={true}
       >
-        {/* Mapbox Layer - Use the 'key' trick to force a re-render when style changes */}
         <TileLayer
           key={mapStyle}
           url={`https://api.mapbox.com/styles/v1/mapbox/${mapStyle}/tiles/{z}/{x}/{y}?access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`}
-          maxZoom={22} // Matches MapContainer
-          maxNativeZoom={18} // Mapbox usually stops providing new images at 18
-          tileSize={512} // Mapbox uses 512px tiles
+          maxZoom={22}
+          maxNativeZoom={18}
+          tileSize={512}
           zoomOffset={-1}
         />
 
-        {/* Auto-centering Logic */}
         {driverPos && (
           <MapController center={driverPos} isTracking={isTracking} />
         )}
 
-        {/* Driver Marker */}
+        {/* Driver marker */}
         {driverPos && (
           <Marker
             position={driverPos}
             icon={L.divIcon({
-              html: `<div style="transform: rotate(${heading}deg)" class="transition-transform duration-500">
+              html: `<div style="transform:rotate(${heading}deg)" class="transition-transform duration-500">
                       <div class="w-10 h-10 bg-blue-600 border-4 border-white rounded-full shadow-2xl flex items-center justify-center">
                         <div class="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[12px] border-b-white mb-1 shadow-sm"></div>
                       </div>
                     </div>`,
-              className: "custom-div-icon", // Avoid Leaflet default background
+              className: "custom-div-icon",
             })}
           />
         )}
 
-        {/* Bin Markers */}
+        {/* Bin markers (base layer — sequence numbers rendered by RoutingLayer on top) */}
         {bins.map((bin: any) => (
           <BinMarker
             key={bin.id}
@@ -91,18 +310,32 @@ export default function DriverMapDisplay({
           />
         ))}
 
-        {/* The Hybrid Routing Engine */}
-        <RoutingLayer
-          driverPos={driverPos}
-          bins={bins}
-          selectedBinId={selectedBinId}
-          routeKey={routeKey}
-          mode={mode}
-          maxDetour={maxDetour}
-          useFence={useFence}
-          onRouteUpdate={onRouteUpdate}
-        />
+        {/* Routing — A* ordering + road geometry + sequence visuals */}
+        {driverPos && (
+          <RoutingLayer
+            key={`route-${routeKey}-${mode}`}
+            driverPos={driverPos}
+            bins={bins}
+            selectedBinId={selectedBinId}
+            routeKey={routeKey}
+            mode={mode}
+            maxDetour={maxDetour}
+            useFence={useFence}
+            onRouteUpdate={onRouteUpdate}
+            onOrderUpdate={setOrderedBins}
+          />
+        )}
       </MapContainer>
+
+      {/* Route order legend — rendered outside MapContainer so it floats over it */}
+      {driverPos && (
+        <StopOrderLegend
+          orderedBins={orderedBins}
+          mode={mode}
+          onSelect={setSelectedBinId}
+          selectedBinId={selectedBinId}
+        />
+      )}
     </div>
   );
 }
