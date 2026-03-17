@@ -9,3 +9,14 @@ declare module 'leaflet' {
 }
 
 declare module 'leaflet-routing-machine';
+
+declare module 'leaflet-rotate';
+
+declare module 'react-leaflet' {
+  interface MapContainerProps {
+    rotate?: boolean;
+    bearing?: number;
+    touchRotate?: boolean;
+    bearingControl?: boolean;
+  }
+}

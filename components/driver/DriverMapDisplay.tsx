@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
+import "leaflet-rotate";                          // ← ADD: map-rotation plugin
 import BinMarker from "./BinMarker";
 import RoutingLayer from "./RoutingLayer";
 import { LUPON_CENTER } from "../map/MapAssets";
+import { BinLabelToggleButton } from "./BinMarker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -27,30 +29,95 @@ interface DriverMapDisplayProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAP CONTROLLER  — keeps camera on driver while tracking
+// MAP CONTROLLER  — keeps camera on driver + rotates map to match heading
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MapController({
   center,
   isTracking,
+  heading,                                        // ← ADD
 }: {
   center: [number, number];
   isTracking: boolean;
+  heading: number;                                // ← ADD
 }) {
   const map = useMap();
+
   useEffect(() => {
     if (isTracking && center)
       map.flyTo(center, map.getZoom(), { animate: true, duration: 1.5 });
   }, [center, isTracking, map]);
+
+  // ← ADD: rotate map whenever heading changes (only while tracking)
+  useEffect(() => {
+    if (!isTracking) return;
+    // leaflet-rotate exposes setBearing on the map instance
+    (map as any).setBearing(heading);
+  }, [heading, isTracking, map]);
+
   return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STOP ORDER LEGEND
-//
-// Floats over the map (top-right). Shows the A*-optimised visit sequence as
-// a compact numbered list. Collapses to a single chevron button on mobile.
-// Populated via the `onOrderUpdate` callback from RoutingLayer.
+// COMPASS BUTTON  — lets the driver reset north or lock/unlock rotation
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CompassButton({
+  heading,
+  isTracking,
+  onReset,
+}: {
+  heading: number;
+  isTracking: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <button
+      onClick={onReset}
+      title="Reset to North"
+      style={{
+        position: "absolute",
+        bottom: 100,
+        right: 16,
+        zIndex: 1000,
+        width: 44,
+        height: 44,
+        borderRadius: "50%",
+        background: "rgba(255,255,255,0.96)",
+        backdropFilter: "blur(8px)",
+        border: "1.5px solid rgba(0,0,0,0.12)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        transition: "box-shadow .2s",
+      }}
+    >
+      {/* Compass needle — rotates opposite to map bearing so N always points up visually */}
+      <svg
+        width="26"
+        height="26"
+        viewBox="0 0 26 26"
+        style={{
+          transform: `rotate(${-heading}deg)`,
+          transition: "transform 0.4s ease",
+        }}
+      >
+        {/* North (red) */}
+        <polygon points="13,2 16,13 13,11 10,13" fill="#ef4444" />
+        {/* South (gray) */}
+        <polygon points="13,24 16,13 13,15 10,13" fill="#94a3b8" />
+        {/* Center dot */}
+        <circle cx="13" cy="13" r="2" fill="#1e293b" />
+      </svg>
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STOP ORDER LEGEND  — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 function StopOrderLegend({
@@ -105,7 +172,6 @@ function StopOrderLegend({
         onClick={() => setCollapsed((c) => !c)}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          {/* Route icon */}
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <circle cx="3" cy="13" r="2" fill={accent} />
             <circle cx="13" cy="3" r="2" fill={accent} />
@@ -140,11 +206,7 @@ function StopOrderLegend({
           {orderedBins.map((bin: any, idx: number) => {
             const urgent = bin.fillLevel >= 80;
             const isSelected = bin.id === selectedBinId;
-            const badgeBg = isSelected
-              ? "#2563eb"
-              : urgent
-              ? "#dc2626"
-              : accent;
+            const badgeBg = isSelected ? "#2563eb" : urgent ? "#dc2626" : accent;
 
             return (
               <li
@@ -168,7 +230,6 @@ function StopOrderLegend({
                     : "transparent")
                 }
               >
-                {/* Step badge */}
                 <div
                   style={{
                     width: 24,
@@ -186,8 +247,6 @@ function StopOrderLegend({
                 >
                   {idx + 1}
                 </div>
-
-                {/* Name + fill */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p
                     style={{
@@ -207,16 +266,12 @@ function StopOrderLegend({
                     {bin.fillLevel}% full
                   </p>
                 </div>
-
-                {/* Arrow */}
                 {idx < orderedBins.length - 1 && (
                   <span style={{ fontSize: 10, color: "#94a3b8" }}>›</span>
                 )}
               </li>
             );
           })}
-
-          {/* Footer totals */}
           <li
             style={{
               borderTop: `1px solid ${accent}22`,
@@ -254,10 +309,15 @@ export default function DriverMapDisplay({
   onRouteUpdate,
   isTracking,
 }: DriverMapDisplayProps) {
-  // Populated by RoutingLayer via onOrderUpdate once A* resolves
   const [orderedBins, setOrderedBins] = useState<any[]>([]);
 
-  // Clear legend whenever the route is recalculated
+  // ← ADD: ref to call setBearing from the CompassButton (outside MapContainer)
+  const [mapRef, setMapRef] = useState<L.Map | null>(null);
+
+  const resetNorth = () => {
+    if (mapRef) (mapRef as any).setBearing(0);
+  };
+
   useEffect(() => {
     setOrderedBins([]);
   }, [routeKey, mode, driverPos]);
@@ -271,6 +331,9 @@ export default function DriverMapDisplay({
         zoomControl={false}
         className="h-full w-full"
         preferCanvas={true}
+        rotate={true}                             // ← ADD: enable leaflet-rotate
+        bearing={0}                               // ← ADD: initial bearing
+        ref={setMapRef}                           // ← ADD: grab map instance
       >
         <TileLayer
           key={mapStyle}
@@ -282,7 +345,11 @@ export default function DriverMapDisplay({
         />
 
         {driverPos && (
-          <MapController center={driverPos} isTracking={isTracking} />
+          <MapController
+            center={driverPos}
+            isTracking={isTracking}
+            heading={heading}                     // ← ADD
+          />
         )}
 
         {/* Driver marker */}
@@ -290,7 +357,9 @@ export default function DriverMapDisplay({
           <Marker
             position={driverPos}
             icon={L.divIcon({
-              html: `<div style="transform:rotate(${heading}deg)" class="transition-transform duration-500">
+              // ← CHANGE: remove inline rotation from the arrow div — the MAP rotates now.
+              //   The arrow always points "up" in map-space which equals the heading direction.
+              html: `<div class="transition-transform duration-500">
                       <div class="w-10 h-10 bg-blue-600 border-4 border-white rounded-full shadow-2xl flex items-center justify-center">
                         <div class="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[12px] border-b-white mb-1 shadow-sm"></div>
                       </div>
@@ -300,7 +369,7 @@ export default function DriverMapDisplay({
           />
         )}
 
-        {/* Bin markers (base layer — sequence numbers rendered by RoutingLayer on top) */}
+        {/* Bin markers */}
         {bins.map((bin: any) => (
           <BinMarker
             key={bin.id}
@@ -310,7 +379,7 @@ export default function DriverMapDisplay({
           />
         ))}
 
-        {/* Routing — A* ordering + road geometry + sequence visuals */}
+        {/* Routing */}
         {driverPos && (
           <RoutingLayer
             key={`route-${routeKey}-${mode}`}
@@ -325,9 +394,11 @@ export default function DriverMapDisplay({
             onOrderUpdate={setOrderedBins}
           />
         )}
+        
+      <BinLabelToggleButton />
       </MapContainer>
 
-      {/* Route order legend — rendered outside MapContainer so it floats over it */}
+      {/* Stop order legend */}
       {driverPos && (
         <StopOrderLegend
           orderedBins={orderedBins}
@@ -336,6 +407,13 @@ export default function DriverMapDisplay({
           selectedBinId={selectedBinId}
         />
       )}
+
+      {/* ← ADD: Compass reset button */}
+      <CompassButton
+        heading={isTracking ? heading : 0}
+        isTracking={isTracking}
+        onReset={resetNorth}
+      />
     </div>
   );
 }

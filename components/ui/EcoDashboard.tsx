@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { RealtimePostgresUpdatePayload } from "@supabase/supabase-js";
+import { BinLabelToggleButton } from "../driver/BinMarker"; // ← ADD
 
 const supabase = createClient();
 
@@ -13,7 +14,6 @@ interface CollectionLog {
   time: string;
 }
 
-// 🔥 FIXED: Explicitly typed interface for the payload
 interface DriverDetails {
   id: string;
   duty_status: string;
@@ -21,7 +21,7 @@ interface DriverDetails {
 }
 
 interface DashboardProps {
-  bins: any[]; 
+  bins: any[];
   history: CollectionLog[];
   eta: { dist: string; time: string };
   isTracking: boolean;
@@ -61,7 +61,6 @@ export default function EcoDashboard(props: DashboardProps) {
             filter: `id=eq.${user.id}`
           },
           (payload: RealtimePostgresUpdatePayload<DriverDetails>) => {
-            // Update the parent's tracking state based on DB changes
             const isNowOnDuty = payload.new.duty_status === "ON-DUTY";
             if (isNowOnDuty && !isTracking) props.onStartTracking();
             if (!isNowOnDuty && isTracking) props.onStopTracking();
@@ -89,12 +88,8 @@ export default function EcoDashboard(props: DashboardProps) {
       .eq("id", user.id);
 
     if (!error) {
-      // Trigger parent callbacks
-      if (nextStatus === "ON-DUTY") {
-        props.onStartTracking();
-      } else {
-        props.onStopTracking();
-      }
+      if (nextStatus === "ON-DUTY") props.onStartTracking();
+      else props.onStopTracking();
     } else {
       console.error("Failed to update status:", error.message);
     }
@@ -112,13 +107,13 @@ export default function EcoDashboard(props: DashboardProps) {
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
-        
+
         {/* Top Controls */}
-        <ModeSelector 
-          mode={routingMode} 
-          setMode={props.setRoutingMode} 
-          useFence={props.useFence} 
-          setUseFence={props.setUseFence} 
+        <ModeSelector
+          mode={routingMode}
+          setMode={props.setRoutingMode}
+          useFence={props.useFence}
+          setUseFence={props.setUseFence}
         />
 
         {/* Big Route Card */}
@@ -129,12 +124,12 @@ export default function EcoDashboard(props: DashboardProps) {
 
         {/* Status Cards */}
         <div className="space-y-3 mb-6">
-          <StatCard 
-            label="Active Stops" 
-            value={activeStops.toString()} 
-            sub="Bins > 40%" 
-            color="text-emerald-600" 
-            icon="🗑️" 
+          <StatCard
+            label="Active Stops"
+            value={activeStops.toString()}
+            sub="Bins > 40%"
+            color="text-emerald-600"
+            icon="🗑️"
           />
         </div>
 
@@ -148,12 +143,14 @@ export default function EcoDashboard(props: DashboardProps) {
       {/* Persistent Action Footer */}
       <div className="p-5 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-8">
         <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
+
+          {/* ── Tracking + Recalculate (unchanged) ── */}
           <button
             onClick={handleToggleTracking}
             disabled={isSyncing}
             className={`w-full py-4 rounded-[1.8rem] font-black text-xs uppercase transition-all active:scale-95 border-[3px] flex items-center justify-center gap-2 ${
-              isTracking 
-                ? "bg-red-50 text-red-600 border-red-100 shadow-inner" 
+              isTracking
+                ? "bg-red-50 text-red-600 border-red-100 shadow-inner"
                 : "bg-blue-600 text-white shadow-xl shadow-blue-100 border-blue-500"
             }`}
           >
@@ -165,41 +162,50 @@ export default function EcoDashboard(props: DashboardProps) {
             onClick={handleRefresh}
             disabled={isRefreshing}
             className={`w-full py-3 rounded-[1.8rem] font-black text-[10px] uppercase flex justify-center items-center gap-2 border transition-all ${
-              isRefreshing 
-                ? "bg-slate-50 text-slate-400 border-slate-100" 
+              isRefreshing
+                ? "bg-slate-50 text-slate-400 border-slate-100"
                 : "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
             }`}
           >
             <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
             {isRefreshing ? "Optimizing..." : "Recalculate Path"}
           </button>
+
+          {/* ── ADD: Marker label toggle ── */}
+          <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-[1.8rem] px-5 py-3">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              🗺️ Marker Labels
+            </span>
+            <BinLabelToggleButton />
+          </div>
+
         </div>
       </div>
     </div>
   );
 }
 
-// --- Sub-Components (Remain Unchanged as requested) ---
+// --- Sub-Components (unchanged) ---
 
 function ModeSelector({ mode, setMode, useFence, setUseFence }: any) {
   return (
     <div className="flex justify-between items-center mb-6 gap-2">
       <div className="flex bg-slate-100 p-1 rounded-2xl w-fit">
-        <button 
-          onClick={() => setMode("fastest")} 
+        <button
+          onClick={() => setMode("fastest")}
           className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${mode === "fastest" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}
         >
           🍃 Fast
         </button>
-        <button 
-          onClick={() => setMode("priority")} 
+        <button
+          onClick={() => setMode("priority")}
           className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${mode === "priority" ? "bg-white text-orange-500 shadow-sm" : "text-slate-400"}`}
         >
           ⚠️ Priority
         </button>
       </div>
-      <button 
-        onClick={() => setUseFence(!useFence)} 
+      <button
+        onClick={() => setUseFence(!useFence)}
         className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase border-2 transition-all ${useFence ? "bg-blue-50 border-blue-100 text-blue-600" : "bg-slate-50 border-slate-200 text-slate-400"}`}
       >
         {useFence ? "🛡️ Fenced" : "🌍 Global"}
@@ -226,11 +232,11 @@ function DetourSlider({ value, onChange }: any) {
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Detour Range</span>
         <span className="text-[10px] font-black text-emerald-600 bg-white px-3 py-1 rounded-full border border-emerald-50">+{value}m</span>
       </div>
-      <input 
-        type="range" min="50" max="800" step="50" 
-        value={value} 
-        onChange={(e) => onChange(parseInt(e.target.value))} 
-        className="w-full h-2 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500" 
+      <input
+        type="range" min="50" max="800" step="50"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className="w-full h-2 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
       />
     </div>
   );
@@ -261,17 +267,17 @@ function CollectionHistory({ history, onClear }: any) {
 function StylePicker({ current, setStyle }: any) {
   const styles = [
     { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
-    { id: "navigation-night-v1", label: "Night", icon: "🌙" },
-    { id: "outdoors-v12", label: "Terrain", icon: "🏔️" },
+    { id: "navigation-night-v1",   label: "Night",     icon: "🌙" },
+    { id: "outdoors-v12",          label: "Terrain",   icon: "🏔️" },
   ];
   return (
     <div className="mb-4">
       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Map View</span>
       <div className="grid grid-cols-3 gap-3">
         {styles.map((s) => (
-          <button 
-            key={s.id} 
-            onClick={() => setStyle(s.id as any)} 
+          <button
+            key={s.id}
+            onClick={() => setStyle(s.id as any)}
             className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${current === s.id ? "bg-blue-50 border-blue-400 shadow-md scale-105" : "bg-white border-slate-100 opacity-60 hover:opacity-100"}`}
           >
             <span className="text-xl">{s.icon}</span>
