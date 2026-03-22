@@ -3,43 +3,96 @@
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
-import "leaflet-rotate";                          // ← ADD: map-rotation plugin
+import "leaflet-rotate";          // must come after L import, before MapContainer mounts
 import BinMarker from "./BinMarker";
 import RoutingLayer from "./RoutingLayer";
 import { LUPON_CENTER } from "../map/MapAssets";
-import { BinLabelToggleButton } from "./BinMarker";
+
+// Safe wrapper — no-ops gracefully if leaflet-rotate didn't patch the instance
+function setBearing(map: L.Map, deg: number) {
+  if (typeof (map as any).setBearing === "function") {
+    (map as any).setBearing(deg);
+  }
+}
+
+// Enable right-click-drag to rotate (desktop equivalent of two-finger rotate)
+function enableMouseRotate(map: L.Map) {
+  const el = map.getContainer();
+  let startX = 0;
+  let startBearing = 0;
+  let rotating = false;
+
+  const onMouseDown = (e: MouseEvent) => {
+    if (e.button !== 2) return;   // right-click only
+    e.preventDefault();
+    rotating    = true;
+    startX      = e.clientX;
+    startBearing = typeof (map as any).getBearing === "function"
+      ? (map as any).getBearing()
+      : 0;
+    el.style.cursor = "grabbing";
+  };
+
+  const onMouseMove = (e: MouseEvent) => {
+    if (!rotating) return;
+    const delta = (e.clientX - startX) * 0.5;  // 0.5° per pixel — feel free to tune
+    setBearing(map, startBearing + delta);
+  };
+
+  const onMouseUp = () => {
+    rotating = false;
+    el.style.cursor = "";
+  };
+
+  const onContextMenu = (e: Event) => e.preventDefault(); // suppress right-click menu
+
+  el.addEventListener("mousedown",   onMouseDown);
+  el.addEventListener("mousemove",   onMouseMove);
+  el.addEventListener("mouseup",     onMouseUp);
+  el.addEventListener("mouseleave",  onMouseUp);
+  el.addEventListener("contextmenu", onContextMenu);
+
+  // Return cleanup
+  return () => {
+    el.removeEventListener("mousedown",   onMouseDown);
+    el.removeEventListener("mousemove",   onMouseMove);
+    el.removeEventListener("mouseup",     onMouseUp);
+    el.removeEventListener("mouseleave",  onMouseUp);
+    el.removeEventListener("contextmenu", onContextMenu);
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DriverMapDisplayProps {
-  bins: any[];
-  driverPos: [number, number] | null;
-  heading: number;
-  selectedBinId: number | null;
-  setSelectedBinId: (id: number) => void;
-  routeKey: number;
-  mode: "fastest" | "priority";
-  maxDetour: number;
-  useFence: boolean;
-  mapStyle: string;
-  onRouteUpdate: (stats: { dist: string; time: string }) => void;
-  isTracking: boolean;
+  bins:            any[];
+  driverPos:       [number, number] | null;
+  heading:         number;
+  selectedBinId:   number | null;
+  setSelectedBinId:(id: number) => void;
+  routeKey:        number;
+  mode:            "fastest" | "priority";
+  maxDetour:       number;
+  useFence:        boolean;
+  mapStyle:        string;
+  onRouteUpdate:   (stats: { dist: string; time: string }) => void;
+  isTracking:      boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAP CONTROLLER  — keeps camera on driver + rotates map to match heading
+// MAP CONTROLLER — follows driver + rotates map to heading
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MapController({
   center,
   isTracking,
-  heading,                                        // ← ADD
+  heading,
 }: {
-  center: [number, number];
+  center:     [number, number];
   isTracking: boolean;
-  heading: number;                                // ← ADD
+  heading:    number;
 }) {
   const map = useMap();
 
@@ -48,18 +101,21 @@ function MapController({
       map.flyTo(center, map.getZoom(), { animate: true, duration: 1.5 });
   }, [center, isTracking, map]);
 
-  // ← ADD: rotate map whenever heading changes (only while tracking)
   useEffect(() => {
     if (!isTracking) return;
-    // leaflet-rotate exposes setBearing on the map instance
-    (map as any).setBearing(heading);
+    setBearing(map, heading);
   }, [heading, isTracking, map]);
+
+  // Enable right-click-drag rotation on desktop (always active, independent of tracking)
+  useEffect(() => {
+    return enableMouseRotate(map);
+  }, [map]);
 
   return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPASS BUTTON  — lets the driver reset north or lock/unlock rotation
+// COMPASS BUTTON
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CompassButton({
@@ -67,9 +123,9 @@ function CompassButton({
   isTracking,
   onReset,
 }: {
-  heading: number;
+  heading:    number;
   isTracking: boolean;
-  onReset: () => void;
+  onReset:    () => void;
 }) {
   return (
     <button
@@ -95,21 +151,12 @@ function CompassButton({
         transition: "box-shadow .2s",
       }}
     >
-      {/* Compass needle — rotates opposite to map bearing so N always points up visually */}
       <svg
-        width="26"
-        height="26"
-        viewBox="0 0 26 26"
-        style={{
-          transform: `rotate(${-heading}deg)`,
-          transition: "transform 0.4s ease",
-        }}
+        width="26" height="26" viewBox="0 0 26 26"
+        style={{ transform: `rotate(${-heading}deg)`, transition: "transform 0.4s ease" }}
       >
-        {/* North (red) */}
         <polygon points="13,2 16,13 13,11 10,13" fill="#ef4444" />
-        {/* South (gray) */}
         <polygon points="13,24 16,13 13,15 10,13" fill="#94a3b8" />
-        {/* Center dot */}
         <circle cx="13" cy="13" r="2" fill="#1e293b" />
       </svg>
     </button>
@@ -117,7 +164,7 @@ function CompassButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STOP ORDER LEGEND  — unchanged
+// STOP ORDER LEGEND  — now shows U-turn warnings per stop
 // ─────────────────────────────────────────────────────────────────────────────
 
 function StopOrderLegend({
@@ -126,17 +173,19 @@ function StopOrderLegend({
   onSelect,
   selectedBinId,
 }: {
-  orderedBins: any[];
-  mode: "fastest" | "priority";
-  onSelect: (id: number) => void;
+  orderedBins:   any[];
+  mode:          "fastest" | "priority";
+  onSelect:      (id: number) => void;
   selectedBinId: number | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
   if (orderedBins.length === 0) return null;
 
-  const accent = mode === "priority" ? "#f97316" : "#059669";
+  const accent   = mode === "priority" ? "#f97316" : "#059669";
   const accentBg = mode === "priority" ? "rgba(249,115,22,.12)" : "rgba(5,150,105,.12)";
+
+  const uturnCount = orderedBins.filter((b: any) => b.requiresUturn).length;
 
   return (
     <div
@@ -150,7 +199,7 @@ function StopOrderLegend({
         borderRadius: 16,
         boxShadow: "0 4px 24px rgba(0,0,0,.18)",
         border: `1.5px solid ${accent}44`,
-        minWidth: collapsed ? "auto" : 210,
+        minWidth: collapsed ? "auto" : 220,
         maxWidth: 240,
         overflow: "hidden",
         fontFamily: "sans-serif",
@@ -175,38 +224,37 @@ function StopOrderLegend({
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <circle cx="3" cy="13" r="2" fill={accent} />
             <circle cx="13" cy="3" r="2" fill={accent} />
-            <path
-              d="M3 11 C3 7 13 9 13 5"
-              stroke={accent}
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              fill="none"
-            />
+            <path d="M3 11 C3 7 13 9 13 5" stroke={accent} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
           </svg>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 800,
-              color: accent,
-              letterSpacing: ".06em",
-              textTransform: "uppercase",
-            }}
-          >
+          <span style={{ fontSize: 11, fontWeight: 800, color: accent, letterSpacing: ".06em", textTransform: "uppercase" }}>
             {collapsed ? `${orderedBins.length} stops` : "A* Route Order"}
           </span>
         </div>
-        <span style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
-          {collapsed ? "▼" : "▲"}
-        </span>
+        {/* U-turn count pill in header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {!collapsed && uturnCount > 0 && (
+            <span style={{
+              fontSize: 9, fontWeight: 800, color: "#d97706",
+              background: "#fef3c7", border: "1px solid #fde68a",
+              borderRadius: 20, padding: "1px 6px",
+            }}>
+              ↩ {uturnCount}
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: accent, fontWeight: 700 }}>
+            {collapsed ? "▼" : "▲"}
+          </span>
+        </div>
       </div>
 
       {/* Stop list */}
       {!collapsed && (
         <ul style={{ margin: 0, padding: "6px 0 8px", listStyle: "none" }}>
           {orderedBins.map((bin: any, idx: number) => {
-            const urgent = bin.fillLevel >= 80;
+            const urgent     = bin.fillLevel >= 80;
             const isSelected = bin.id === selectedBinId;
-            const badgeBg = isSelected ? "#2563eb" : urgent ? "#dc2626" : accent;
+            const isUturn    = !!bin.requiresUturn;
+            const badgeBg    = isSelected ? "#2563eb" : urgent ? "#dc2626" : accent;
 
             return (
               <li
@@ -220,70 +268,66 @@ function StopOrderLegend({
                   cursor: "pointer",
                   background: isSelected ? `${accent}18` : "transparent",
                   transition: "background .15s",
+                  borderLeft: isUturn ? "3px solid #f59e0b" : "3px solid transparent",
                 }}
                 onMouseEnter={(e) =>
                   ((e.currentTarget as HTMLElement).style.background = `${accent}12`)
                 }
                 onMouseLeave={(e) =>
-                  ((e.currentTarget as HTMLElement).style.background = isSelected
-                    ? `${accent}18`
-                    : "transparent")
+                  ((e.currentTarget as HTMLElement).style.background = isSelected ? `${accent}18` : "transparent")
                 }
               >
-                <div
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    background: badgeBg,
-                    color: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    flexShrink: 0,
-                  }}
-                >
+                {/* Step badge */}
+                <div style={{
+                  width: 24, height: 24, borderRadius: "50%",
+                  background: badgeBg, color: "#fff",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 700, flexShrink: 0,
+                  // Amber ring for U-turn stops
+                  boxShadow: isUturn ? "0 0 0 2px #f59e0b" : "none",
+                }}>
                   {idx + 1}
                 </div>
+
+                {/* Name + fill */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#1e293b",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                  <p style={{
+                    margin: 0, fontSize: 12, fontWeight: 600, color: "#1e293b",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
                     {bin.name ?? `Bin ${bin.id}`}
                   </p>
                   <p style={{ margin: 0, fontSize: 10, color: urgent ? "#dc2626" : "#64748b" }}>
-                    {urgent ? "⚠ " : ""}
-                    {bin.fillLevel}% full
+                    {urgent ? "⚠ " : ""}{bin.fillLevel}% full
+                    {/* U-turn label inline */}
+                    {isUturn && (
+                      <span style={{ color: "#d97706", fontWeight: 700, marginLeft: 4 }}>
+                        · ↩ U-turn
+                      </span>
+                    )}
                   </p>
                 </div>
+
                 {idx < orderedBins.length - 1 && (
                   <span style={{ fontSize: 10, color: "#94a3b8" }}>›</span>
                 )}
               </li>
             );
           })}
-          <li
-            style={{
-              borderTop: `1px solid ${accent}22`,
-              margin: "4px 14px 0",
-              paddingTop: 6,
-              fontSize: 10,
-              color: "#64748b",
-              fontWeight: 600,
-              letterSpacing: ".04em",
-            }}
-          >
+
+          {/* Footer */}
+          <li style={{
+            borderTop: `1px solid ${accent}22`,
+            margin: "4px 14px 0",
+            paddingTop: 6,
+            fontSize: 10, color: "#64748b", fontWeight: 600, letterSpacing: ".04em",
+          }}>
             {orderedBins.length} STOPS · {mode === "priority" ? "PRIORITY" : "FASTEST"} MODE
+            {uturnCount > 0 && (
+              <span style={{ color: "#d97706", marginLeft: 6 }}>
+                · {uturnCount} U-TURN{uturnCount > 1 ? "S" : ""}
+              </span>
+            )}
           </li>
         </ul>
       )}
@@ -310,17 +354,25 @@ export default function DriverMapDisplay({
   isTracking,
 }: DriverMapDisplayProps) {
   const [orderedBins, setOrderedBins] = useState<any[]>([]);
-
-  // ← ADD: ref to call setBearing from the CompassButton (outside MapContainer)
-  const [mapRef, setMapRef] = useState<L.Map | null>(null);
+  const [mapRef, setMapRef]           = useState<L.Map | null>(null);
+  // Locked position used for routing — only updates on routeKey change, not every GPS tick
+  const [routingPos, setRoutingPos]   = useState<[number, number] | null>(null);
 
   const resetNorth = () => {
-    if (mapRef) (mapRef as any).setBearing(0);
+    if (mapRef) setBearing(mapRef, 0);
   };
 
+  // Lock the routing position when recalculate is pressed or mode changes.
+  // driverPos is intentionally excluded — we do NOT want GPS drift to re-lock.
   useEffect(() => {
+    if (driverPos) setRoutingPos(driverPos);
     setOrderedBins([]);
-  }, [routeKey, mode, driverPos]);
+  }, [routeKey, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On first fix after tracking starts, lock initial routing position
+  useEffect(() => {
+    if (driverPos && !routingPos) setRoutingPos(driverPos);
+  }, [driverPos, routingPos]);
 
   return (
     <div className="absolute inset-0 md:relative md:flex-1 h-full order-1 overflow-hidden">
@@ -331,9 +383,12 @@ export default function DriverMapDisplay({
         zoomControl={false}
         className="h-full w-full"
         preferCanvas={true}
-        rotate={true}                             // ← ADD: enable leaflet-rotate
-        bearing={0}                               // ← ADD: initial bearing
-        ref={setMapRef}                           // ← ADD: grab map instance
+        rotate={true}
+        bearing={0}
+        touchRotate={true}
+        touchGestures={true}
+        rotateControl={false}
+        ref={setMapRef}
       >
         <TileLayer
           key={mapStyle}
@@ -345,20 +400,14 @@ export default function DriverMapDisplay({
         />
 
         {driverPos && (
-          <MapController
-            center={driverPos}
-            isTracking={isTracking}
-            heading={heading}                     // ← ADD
-          />
+          <MapController center={driverPos} isTracking={isTracking} heading={heading} />
         )}
 
-        {/* Driver marker */}
+        {/* Driver marker — arrow always points "up" since map rotates */}
         {driverPos && (
           <Marker
             position={driverPos}
             icon={L.divIcon({
-              // ← CHANGE: remove inline rotation from the arrow div — the MAP rotates now.
-              //   The arrow always points "up" in map-space which equals the heading direction.
               html: `<div class="transition-transform duration-500">
                       <div class="w-10 h-10 bg-blue-600 border-4 border-white rounded-full shadow-2xl flex items-center justify-center">
                         <div class="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[12px] border-b-white mb-1 shadow-sm"></div>
@@ -379,7 +428,7 @@ export default function DriverMapDisplay({
           />
         ))}
 
-        {/* Routing */}
+        {/* RoutingLayer — now receives heading for U-turn-aware A* */}
         {driverPos && (
           <RoutingLayer
             key={`route-${routeKey}-${mode}`}
@@ -392,13 +441,13 @@ export default function DriverMapDisplay({
             useFence={useFence}
             onRouteUpdate={onRouteUpdate}
             onOrderUpdate={setOrderedBins}
+            heading={heading}
+            routingPos={routingPos}        // ← locked pos, only updates on recalculate
           />
         )}
-        
-      <BinLabelToggleButton />
       </MapContainer>
 
-      {/* Stop order legend */}
+      {/* Overlays */}
       {driverPos && (
         <StopOrderLegend
           orderedBins={orderedBins}
@@ -408,7 +457,6 @@ export default function DriverMapDisplay({
         />
       )}
 
-      {/* ← ADD: Compass reset button */}
       <CompassButton
         heading={isTracking ? heading : 0}
         isTracking={isTracking}

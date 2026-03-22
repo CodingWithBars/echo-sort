@@ -17,6 +17,8 @@ declare module 'react-leaflet' {
     rotate?: boolean;
     bearing?: number;
     touchRotate?: boolean;
+    touchGestures?: boolean;
+    rotateControl?: boolean;
     bearingControl?: boolean;
   }
 }

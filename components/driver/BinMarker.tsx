@@ -1,8 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Marker, Tooltip, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-import { createBinIcon } from "../map/MapAssets"; // ← restored
 
 // ─── Shared toggle state ──────────────────────────────────────────────────────
 type Listener = (v: boolean) => void;
@@ -12,11 +11,11 @@ let _compact = false;
 function useCompactMode(): [boolean, () => void] {
   const [compact, setCompact] = useState(_compact);
 
-  useState(() => {
+  useEffect(() => {
     const handler: Listener = (v) => setCompact(v);
     listeners.add(handler);
-    return () => listeners.delete(handler);
-  });
+    return () => { listeners.delete(handler); };
+  }, []);
 
   const toggle = () => {
     _compact = !_compact;
@@ -25,6 +24,14 @@ function useCompactMode(): [boolean, () => void] {
 
   return [compact, toggle];
 }
+
+// ─── Invisible anchor — tooltip is the only visual ───────────────────────────
+const GHOST_ICON = L.divIcon({
+  html:       "",
+  className:  "",
+  iconSize:   [0, 0],
+  iconAnchor: [0, 0],
+});
 
 // ─── Fill level color config ──────────────────────────────────────────────────
 const getFillColor = (level: number) => {
@@ -190,14 +197,12 @@ export default function BinMarker({ bin, isSelected, onClick }: any) {
     zoomend: () => setZoom(map.getZoom()),
   });
 
-  const showLabel  = zoom >= 16;
-  const isMini     = zoom < 14;
-  const isCompact  = zoom < 16;
+  const showLabel = zoom >= 14;
 
   return (
     <Marker
       position={[bin.lat, bin.lng]}
-      icon={createBinIcon(bin.fillLevel, isSelected, bin.batteryLevel, isMini || isCompact)} // ← restored
+      icon={GHOST_ICON}
       eventHandlers={{ click: onClick }}
       zIndexOffset={isSelected ? 1000 : 0}
     >
@@ -205,7 +210,7 @@ export default function BinMarker({ bin, isSelected, onClick }: any) {
         <Tooltip
           permanent
           direction="top"
-          offset={[0, -28]}
+          offset={[0, 0]}
           opacity={1}
           className="eco-bin-tooltip"
           interactive={false}
