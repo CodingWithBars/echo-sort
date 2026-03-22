@@ -408,7 +408,7 @@ function depotIcon(): L.DivIcon {
         box-shadow:0 2px 8px rgba(0,0,0,.35);
         font-size:10px;font-weight:800;color:#fff;
         font-family:sans-serif;letter-spacing:.04em;
-      ">HQ</div>`,
+      ">POST</div>`,
   });
 }
 
