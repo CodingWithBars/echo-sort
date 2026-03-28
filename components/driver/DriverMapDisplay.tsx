@@ -1,12 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet-rotate";          // must come after L import, before MapContainer mounts
 import BinMarker from "./BinMarker";
 import RoutingLayer from "./RoutingLayer";
 import { LUPON_CENTER } from "../map/MapAssets";
+
+
+// Destination marker icon (purple flag) — defined outside component for stability
+const DEST_ICON = L.divIcon({
+  className:  "",
+  iconSize:   [36, 36],
+  iconAnchor: [18, 36],
+  html: `<div style="
+    width:36px;height:36px;border-radius:8px 8px 2px 2px;
+    background:#7c3aed;border:2.5px solid #c4b5fd;
+    display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;
+    box-shadow:0 2px 10px rgba(0,0,0,.4);
+    font-size:9px;font-weight:800;color:#fff;font-family:sans-serif;letter-spacing:.04em;
+  "><div style="font-size:14px;line-height:1;">⚑</div><div>END</div></div>`,
+});
 
 // Safe wrapper — no-ops gracefully if leaflet-rotate didn't patch the instance
 function setBearing(map: L.Map, deg: number) {
@@ -79,6 +94,27 @@ interface DriverMapDisplayProps {
   mapStyle:        string;
   onRouteUpdate:   (stats: { dist: string; time: string }) => void;
   isTracking:      boolean;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DESTINATION PICKER  — activates on-map tap/click to set exit point
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DestinationPicker({
+  active,
+  onPick,
+}: {
+  active:  boolean;
+  onPick:  (pos: [number, number]) => void;
+}) {
+  useMapEvents({
+    click(e) {
+      if (!active) return;
+      onPick([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -357,6 +393,9 @@ export default function DriverMapDisplay({
   const [mapRef, setMapRef]           = useState<L.Map | null>(null);
   // Locked position used for routing — only updates on routeKey change, not every GPS tick
   const [routingPos, setRoutingPos]   = useState<[number, number] | null>(null);
+  // Driver-set exit/destination point
+  const [destinationPos, setDestinationPos] = useState<[number, number] | null>(null);
+  const [pickingDest, setPickingDest]       = useState(false);
 
   const resetNorth = () => {
     if (mapRef) setBearing(mapRef, 0);
@@ -418,6 +457,20 @@ export default function DriverMapDisplay({
           />
         )}
 
+        {/* Destination picker click handler */}
+        <DestinationPicker
+          active={pickingDest}
+          onPick={(pos) => {
+            setDestinationPos(pos);
+            setPickingDest(false);
+          }}
+        />
+
+        {/* Destination marker */}
+        {destinationPos && (
+          <Marker position={destinationPos} icon={DEST_ICON} zIndexOffset={1200} />
+        )}
+
         {/* Bin markers */}
         {bins.map((bin: any) => (
           <BinMarker
@@ -443,6 +496,7 @@ export default function DriverMapDisplay({
             onOrderUpdate={setOrderedBins}
             heading={heading}
             routingPos={routingPos}        // ← locked pos, only updates on recalculate
+            destinationPos={destinationPos}
           />
         )}
       </MapContainer>
@@ -455,6 +509,94 @@ export default function DriverMapDisplay({
           onSelect={setSelectedBinId}
           selectedBinId={selectedBinId}
         />
+      )}
+
+      {/* Destination control — set / clear exit point */}
+      <div style={{
+        position:   "absolute",
+        bottom:     152,
+        right:      16,
+        zIndex:     1000,
+        display:    "flex",
+        flexDirection: "column",
+        gap:        6,
+      }}>
+        {/* Set destination button */}
+        <button
+          onClick={() => setPickingDest((p) => !p)}
+          title={pickingDest ? "Cancel — tap map to set exit" : "Set exit / destination"}
+          style={{
+            width:          44,
+            height:         44,
+            borderRadius:   "50%",
+            background:     pickingDest ? "#7c3aed" : "rgba(255,255,255,0.96)",
+            backdropFilter: "blur(8px)",
+            border:         pickingDest ? "1.5px solid #c4b5fd" : "1.5px solid rgba(0,0,0,0.12)",
+            boxShadow:      "0 2px 12px rgba(0,0,0,0.18)",
+            cursor:         "pointer",
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+            padding:        0,
+            color:          pickingDest ? "#fff" : "#374151",
+            fontSize:       18,
+            transition:     "all .2s",
+          }}
+        >
+          ⚑
+        </button>
+
+        {/* Clear destination button — only shown when a destination is set */}
+        {destinationPos && !pickingDest && (
+          <button
+            onClick={() => setDestinationPos(null)}
+            title="Clear exit point"
+            style={{
+              width:          44,
+              height:         44,
+              borderRadius:   "50%",
+              background:     "rgba(255,255,255,0.96)",
+              backdropFilter: "blur(8px)",
+              border:         "1.5px solid rgba(239,68,68,0.4)",
+              boxShadow:      "0 2px 12px rgba(0,0,0,0.18)",
+              cursor:         "pointer",
+              display:        "flex",
+              alignItems:     "center",
+              justifyContent: "center",
+              padding:        0,
+              color:          "#ef4444",
+              fontSize:       14,
+              fontWeight:     700,
+              fontFamily:     "sans-serif",
+              transition:     "all .2s",
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* Picking mode hint banner */}
+      {pickingDest && (
+        <div style={{
+          position:      "absolute",
+          top:           70,
+          left:          "50%",
+          transform:     "translateX(-50%)",
+          zIndex:        1000,
+          background:    "#7c3aed",
+          color:         "#fff",
+          padding:       "8px 18px",
+          borderRadius:  20,
+          fontSize:      12,
+          fontWeight:    700,
+          fontFamily:    "sans-serif",
+          boxShadow:     "0 2px 12px rgba(0,0,0,0.25)",
+          pointerEvents: "none",
+          whiteSpace:    "nowrap",
+        }}>
+          Tap anywhere on the map to set exit point
+        </div>
       )}
 
       <CompassButton

@@ -20,9 +20,11 @@ interface DriverSidebarProps {
   // FIX #3: onAddToHistory forwarded to EcoDashboard / children that log collections
   onAddToHistory?: (entry: { id: number; name: string; time: string }) => void;
 
-  // Settings
-  mapStyle: any;
-  setMapStyle: (s: any) => void;
+  // ADD THESE TWO LINES:
+  mapStyle?: any; 
+  setMapStyle?: (s: any) => void;
+
+
   routingMode: "fastest" | "priority";
   setRoutingMode: (m: "fastest" | "priority") => void;
   maxDetour: number;
@@ -47,8 +49,8 @@ export default function DriverSidebar({
   onRefresh,
   onClearHistory,    // FIX #2: now destructured
   onAddToHistory,    // FIX #3: now destructured
-  mapStyle,
-  setMapStyle,
+  // mapStyle,
+  // setMapStyle,
   routingMode,
   setRoutingMode,
   maxDetour,
@@ -130,8 +132,8 @@ export default function DriverSidebar({
               onRefresh={onRefresh}
               // FIX #2: forwarded through to EcoDashboard
               onClearHistory={onClearHistory}
-              mapStyle={mapStyle}
-              setMapStyle={setMapStyle}
+              // mapStyle={mapStyle}
+              // setMapStyle={setMapStyle}
               routingMode={routingMode}
               setRoutingMode={setRoutingMode}
               maxDetour={maxDetour}

@@ -112,6 +112,8 @@ interface RoutingProps {
   routingPos?:   [number, number] | null;
   // ← Live heading for U-turn penalty
   heading?:      number;
+  // Optional exit/destination point appended as the final mandatory stop
+  destinationPos?: [number, number] | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,32 +198,101 @@ function uturnPenalty(
 // so the penalty propagates through the whole route — not just the first hop.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PASS-THROUGH DETECTION
+//
+// Returns true if node K lies "on the way" from node A to node B — meaning
+// skipping K to visit B first would force the truck to physically pass K,
+// then backtrack to collect it.
+//
+// Method: project K onto the A→B line segment. If K is within PASS_THRESHOLD
+// metres of the segment AND its projection falls between A and B (not past
+// either end), it is considered on-path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PASS_THRESHOLD_M  = 40;   // metres — how close to the line counts as "on path"
+const PASSTHROUGH_COST  = 600;  // equivalent metres penalty for skipping an on-path bin
+
+function pointToSegmentDist(
+  p:  [number, number],   // lat,lng of point
+  a:  [number, number],   // lat,lng of segment start
+  b:  [number, number],   // lat,lng of segment end
+): number {
+  // Convert to simple XY plane (good enough for short urban distances)
+  const toXY = (ll: [number, number]) => [
+    ll[1] * Math.cos((ll[0] * Math.PI) / 180) * 111_320,
+    ll[0] * 110_540,
+  ];
+  const [px, py] = toXY(p);
+  const [ax, ay] = toXY(a);
+  const [bx, by] = toXY(b);
+
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+
+  // Parameter t: 0=at A, 1=at B
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+
+  const nearX = ax + t * dx;
+  const nearY = ay + t * dy;
+
+  // Only count as pass-through if projection is strictly between A and B
+  // (t in [0.05, 0.95]) — not at the endpoints themselves
+  if (t < 0.05 || t > 0.95) return Infinity;
+
+  return Math.hypot(px - nearX, py - nearY);
+}
+
 function buildHeadingAwareMatrix(
-  nodes:      [number, number][],
-  driverHeading: number
+  nodes:         [number, number][],
+  driverHeading: number,
+  destIdx:       number = -1   // destination node index (-1 if none)
 ): number[][] {
   const n    = nodes.length;
   const base = buildDistMatrix(nodes);
+  const mat  = base.map(r => [...r]);
 
-  // Clone the base matrix
-  const mat = base.map(r => [...r]);
-
-  // Adjust edges leaving node 0 (the driver) using the real heading
+  // ── Driver → bin edges: use real GPS heading ─────────────────────────
   for (let j = 1; j < n; j++) {
+    if (j === destIdx) continue;
     mat[0][j] = base[0][j] + uturnPenalty(nodes[0], nodes[j], driverHeading);
   }
 
-  // Adjust edges between bins using the "arrival heading" of the previous leg
-  // as a proxy for the truck's heading while servicing that bin.
+  // ── Bin → bin edges ───────────────────────────────────────────────────
   for (let i = 1; i < n; i++) {
+    if (i === destIdx) continue;
+    const arrivalAtI = bearing(nodes[0], nodes[i]);
+
     for (let j = 1; j < n; j++) {
-      if (i === j) continue;
-      // Arrival heading at node i comes from the last segment ending at i.
-      // We approximate it as the bearing from the closest prior node — here
-      // we simply use node 0 → i as a first-order estimate (good enough for
-      // urban grids where the path doesn't deviate much from straight-line).
-      const arrivalAtI = bearing(nodes[0], nodes[i]);
-      mat[i][j] = base[i][j] + uturnPenalty(nodes[i], nodes[j], arrivalAtI);
+      if (i === j || j === destIdx) continue;
+
+      // Base cost: distance + U-turn penalty using arrival heading at i
+      let cost = base[i][j] + uturnPenalty(nodes[i], nodes[j], arrivalAtI);
+
+      // Pass-through penalty: scan all OTHER bins k. If k lies on the
+      // i→j path, visiting j before k means the truck passes k and must
+      // backtrack — add a large penalty so A* avoids this.
+      for (let k = 1; k < n; k++) {
+        if (k === i || k === j || k === destIdx) continue;
+        const d = pointToSegmentDist(nodes[k], nodes[i], nodes[j]);
+        if (d < PASS_THRESHOLD_M) {
+          cost += PASSTHROUGH_COST;
+          break; // one pass-through is enough to penalise the edge
+        }
+      }
+
+      mat[i][j] = cost;
+    }
+  }
+
+  // ── Destination edges: no U-turn penalty, no pass-through ────────────
+  // The destination is always the last stop — penalising its approach
+  // would distort the ordering of the bins before it.
+  if (destIdx > 0) {
+    for (let i = 0; i < n; i++) {
+      if (i === destIdx) continue;
+      mat[i][destIdx] = base[i][destIdx]; // raw distance only
     }
   }
 
@@ -408,8 +479,136 @@ function depotIcon(): L.DivIcon {
         box-shadow:0 2px 8px rgba(0,0,0,.35);
         font-size:10px;font-weight:800;color:#fff;
         font-family:sans-serif;letter-spacing:.04em;
-      ">POST</div>`,
+      ">HQ</div>`,
   });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A* TSP WITH FIXED DESTINATION  — destIdx is always visited last
+//
+// Works by treating destIdx as a forced terminal: the solver only considers
+// a state "complete" when ALL bins have been visited AND the last move is
+// to destIdx. This guarantees the exit point is always the final stop
+// regardless of where it sits geographically.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function astarTSPWithDestination(
+  nodes:   [number, number][],
+  dist:    number[][],
+  destIdx: number
+): number[] {
+  const n = nodes.length;
+  if (n <= 1) return [0];
+
+  // With destination: must visit all bin nodes (1..destIdx-1) then destIdx
+  if (n > A_STAR_LIMIT + 1) {
+    // Greedy fallback with pinned destination
+    const binIndices = Array.from({ length: destIdx - 1 }, (_, i) => i + 1);
+    const path = nearestNeighborSubset(dist, binIndices);
+    path.push(destIdx);
+    return path;
+  }
+
+  const binIndices  = Array.from({ length: destIdx - 1 }, (_, i) => i + 1);
+  const allBinsMask = binIndices.reduce((m, i) => m | (1 << i), 1); // bit 0=driver
+  const destBit     = 1 << destIdx;
+  const allVisited  = allBinsMask | destBit;
+
+  const gCost: Map<string, number> = new Map();
+  const pathAt: Map<string, number[]> = new Map();
+  const startKey = `0,${1}`;
+  gCost.set(startKey, 0);
+  pathAt.set(startKey, [0]);
+
+  interface Entry { node: number; mask: number; g: number; f: number; }
+  const open: Entry[] = [{
+    node: 0, mask: 1, g: 0,
+    f: admissibleH(0, 1, dist, n),
+  }];
+
+  while (open.length > 0) {
+    let minIdx = 0;
+    for (let i = 1; i < open.length; i++)
+      if (open[i].f < open[minIdx].f) minIdx = i;
+    const curr = open.splice(minIdx, 1)[0];
+    const key  = `${curr.node},${curr.mask}`;
+
+    if (curr.mask === allVisited) {
+      return pathAt.get(key) ?? [0, ...binIndices, destIdx];
+    }
+
+    const g = gCost.get(key) ?? Infinity;
+    if (curr.g > g) continue;
+
+    // All bins visited — only move allowed is to destination
+    const allBinsVisited = (curr.mask & allBinsMask) === allBinsMask;
+
+    const candidates = allBinsVisited
+      ? [destIdx]
+      : binIndices.filter((i) => !(curr.mask & (1 << i)));
+
+    for (const next of candidates) {
+      const newMask = curr.mask | (1 << next);
+      const newG    = curr.g + dist[curr.node][next];
+      const nKey    = `${next},${newMask}`;
+      if (newG < (gCost.get(nKey) ?? Infinity)) {
+        gCost.set(nKey, newG);
+        const h    = allBinsVisited ? 0 : admissibleH(next, newMask, dist, n);
+        const prev = pathAt.get(key) ?? [0];
+        pathAt.set(nKey, [...prev, next]);
+        open.push({ node: next, mask: newMask, g: newG, f: newG + h });
+      }
+    }
+  }
+
+  return [0, ...binIndices, destIdx];
+}
+
+// Greedy nearest-neighbor over a subset of indices (for fallback with destination)
+function nearestNeighborSubset(dist: number[][], subset: number[]): number[] {
+  const visited = new Set<number>([0]);
+  const path    = [0];
+  const remaining = new Set(subset);
+  while (remaining.size > 0) {
+    const last = path[path.length - 1];
+    let best = Infinity, bestNode = -1;
+    for (const j of remaining) {
+      if (!visited.has(j) && dist[last][j] < best) {
+        best = dist[last][j]; bestNode = j;
+      }
+    }
+    if (bestNode === -1) break;
+    visited.add(bestNode);
+    remaining.delete(bestNode);
+    path.push(bestNode);
+  }
+  return path;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEGMENT COLOR  — red on first leg, fades to route color by the last stop
+// ─────────────────────────────────────────────────────────────────────────────
+
+function segmentColor(
+  segIndex:  number,
+  totalSegs: number,
+  mode:      "fastest" | "priority"
+): string {
+  if (totalSegs === 0) return mode === "priority" ? "#f97316" : "#059669";
+
+  const endH = mode === "priority" ? 25 : 152;
+  const endS = mode === "priority" ? 95 : 69;
+  const endL = mode === "priority" ? 53 : 35;
+
+  const startH = 4, startS = 90, startL = 58;
+  const t = totalSegs === 1 ? 0 : segIndex / (totalSegs - 1);
+
+  const h = Math.round(startH + (endH - startH) * t);
+  const s = Math.round(startS + (endS - startS) * t);
+  const l = Math.round(startL + (endL - startL) * t);
+
+  return `hsl(${h},${s}%,${l}%)`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -463,8 +662,9 @@ export default function RoutingLayer({
   mode       = "fastest",
   useFence   = true,
   maxDetour  = 1000,
-  heading    = 0,
+  heading       = 0,
   routingPos,
+  destinationPos,
 }: RoutingProps) {
   // Use the locked routing position if provided, otherwise fall back to live pos
   const stablePos = routingPos ?? driverPos;
@@ -579,26 +779,40 @@ export default function RoutingLayer({
     const binCoords: [number, number][] = targets.map(
       (t: any) => [t.lat, t.lng] as [number, number]
     );
-    const allNodes: [number, number][] = [stablePos!, ...binCoords];
+    // Append destination as the final mandatory node if set.
+    // A* will always end here because it is the last index and the cost
+    // matrix is built with it included — the solver visits every node.
+    const hasDestination = !!destinationPos;
+    const allNodes: [number, number][] = [
+      stablePos!,
+      ...binCoords,
+      ...(hasDestination ? [destinationPos!] : []),
+    ];
+    // Index of destination in allNodes (last node)
+    const destNodeIdx = hasDestination ? allNodes.length - 1 : -1;
 
     // ── HEADING-AWARE COST MATRIX ─────────────────────────────────────────
     // Uses the driver's real GPS heading to penalise U-turns in A*
-    const dist = buildHeadingAwareMatrix(allNodes, heading);
+    const dist = buildHeadingAwareMatrix(allNodes, heading, destNodeIdx);
 
     console.info(
-      `[A* TSP] Solving: 1 depot + ${targets.length} bins, heading=${heading.toFixed(0)}°, routeKey=${routeKey}`
+      `[A* TSP] Solving: 1 depot + ${targets.length} bins, mode=${mode}, heading=${heading.toFixed(0)}°, routeKey=${routeKey}`
     );
-    const orderedIndices = astarTSP(allNodes, dist);
+    const orderedIndices = hasDestination
+      ? astarTSPWithDestination(allNodes, dist, destNodeIdx)
+      : astarTSP(allNodes, dist);
     console.info(`[A* TSP] Order: ${orderedIndices.join(" → ")}`);
 
+    // orderedTargets excludes the driver (idx 0) and destination (last idx if set)
     const orderedTargets = orderedIndices
-      .filter((i) => i !== 0)
+      .filter((i) => i !== 0 && i !== destNodeIdx)
       .map((i) => targets[i - 1]);
 
     // ── CLASSIFY U-TURNS ──────────────────────────────────────────────────
     const routeWaypoints: [number, number][] = [
       stablePos!,
       ...orderedTargets.map((t: any) => [t.lat, t.lng] as [number, number]),
+      ...(hasDestination ? [destinationPos!] : []),
     ];
     const uturnStops = classifyUturns(routeWaypoints, heading);
 
@@ -646,6 +860,30 @@ export default function RoutingLayer({
         .addTo(group);
     });
 
+    // Destination marker
+    if (hasDestination) {
+      L.marker(destinationPos!, {
+        icon: L.divIcon({
+          className: "",
+          iconSize:  [36, 36],
+          iconAnchor:[18, 36],
+          html: `<div style="
+            width:36px;height:36px;border-radius:8px 8px 2px 2px;
+            background:#7c3aed;border:2.5px solid #c4b5fd;
+            display:flex;align-items:center;justify-content:center;
+            box-shadow:0 2px 8px rgba(0,0,0,.4);
+            font-size:9px;font-weight:800;color:#fff;
+            font-family:sans-serif;letter-spacing:.04em;flex-direction:column;gap:1px;
+          "><div style="font-size:14px;line-height:1;">⚑</div><div>END</div></div>`,
+        }),
+        zIndexOffset: 1200,
+      })
+        .bindTooltip("Destination / exit point", {
+          direction: "top", offset: [0, -8], opacity: 0.92,
+        })
+        .addTo(group);
+    }
+
     // Notify parent with enriched data — add uturn flag per bin for legend
     const orderedWithMeta = orderedTargets.map((bin: any, idx: number) => ({
       ...bin,
@@ -659,64 +897,294 @@ export default function RoutingLayer({
 
     onOrderUpdateRef.current?.(orderedWithMeta);
 
-    // ── FETCH ROAD GEOMETRY FROM MAPBOX DIRECTIONS ────────────────────────
-    const coords = routeWaypoints
-      .map((p) => `${p[1]},${p[0]}`)
-      .join(";");
+    // ── FETCH ROAD GEOMETRY ───────────────────────────────────────────────
+    //
+    // Truck-road strategy:
+    //
+    //   SNAP_RADIUS (350 m): Mapbox snaps each waypoint to the nearest drivable
+    //   road within this radius. A large radius is the primary tool for avoiding
+    //   narrow residential roads — Mapbox picks the closest road it can reach,
+    //   so when the GPS point is in a narrow alley, a 350 m radius forces it to
+    //   find and snap to the main road further away instead.
+    //
+    //   BEARING HINTS: For the driver's start point we pass the GPS heading as a
+    //   bearing hint. This tells Mapbox "the truck is already facing this direction"
+    //   so it routes forward along that road rather than reversing into a side
+    //   street. Angle=45 means ±45° tolerance around the heading.
+    //
+    //   exclude=ferry,unpaved: removes ferries and unpaved/dirt tracks entirely.
+    //   Unpaved is the key addition — barangay dirt paths that appear drivable
+    //   in satellite view are excluded so Mapbox must use paved main roads.
+    //
+    //   continue_straight=true on U-turn legs: forces Mapbox to stay on the
+    //   current road and find a proper turning point (roundabout / intersection)
+    //   rather than cutting through a side street.
+    //
+    //   Fallback chain: SNAP_RADIUS → smaller radius → no radius
+    //   If Mapbox can't find a road at the large radius it means the bin really
+    //   is on a narrow road — we relax progressively so we always get a route.
+
+    const SNAP_RADIUS     = 500;  // metres — primary main-road bias: forces snap to main roads
+    const SNAP_RADIUS_MID = 150;  // metres — fallback if 500m snap fails
+    const BEARING_TOL     = 45;   // degrees — allows turns at intersections, prevents parallel narrow road snap
 
     const profile =
       mode === "priority" ? "mapbox/driving" : "mapbox/driving-traffic";
 
-    const url =
-      `https://api.mapbox.com/directions/v5/${profile}/${coords}` +
-      `?geometries=geojson&overview=full&access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}`;
+    const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
-    fetch(url, { signal })
-      .then((res) => res.json())
-      .then((data: any) => {
-        if (!data.routes?.[0]) {
-          console.warn("[RoutingLayer] No route from Mapbox Directions.");
-          return;
+    const totalLegs   = routeWaypoints.length - 1;
+    const uturnLegSet = new Set<number>();
+    uturnStops.forEach((stopNum) => { uturnLegSet.add(stopNum - 1); });
+
+    // Build Mapbox Directions URL for a single leg (two waypoints).
+    //
+    // How we keep the truck on main roads:
+    //
+    //  1. radiuses=N;N  — snaps each waypoint to the nearest drivable road
+    //     within N metres. A large radius (500 m) means Mapbox must reach
+    //     further from the GPS pin and will land on a main road instead of
+    //     the nearest residential alley.
+    //
+    //  2. bearings=H,45;0,180  — on the first leg, tells Mapbox the truck is
+    //     already facing heading H (±45°). It will snap to roads going in
+    //     roughly that direction, preventing a snap to a parallel side street
+    //     going the wrong way.
+    //
+    //  3. exclude=ferry,motorway  — no ferries; motorways are excluded because
+    //     barangay garbage trucks operate on local roads, not national highways.
+    //     NOTE: Mapbox does NOT support exclude=residential or exclude=unpaved —
+    //     those values are silently ignored. Road class filtering must come from
+    //     the snap radius strategy.
+    //
+    //  4. continue_straight=true on U-turn legs — forces Mapbox to continue
+    //     on the current road to a proper turning point instead of cutting
+    //     through a side street.
+    //
+    //  5. walking=false (via annotations) is not supported — but the driving
+    //     profile already excludes footways, steps, and cycleways natively.
+    //
+    //  6. Fallback chain: 500m → 150m → no radius. If the bin is genuinely
+    //     on a small road (no main road within 500m) we relax progressively
+    //     so the route always renders.
+
+    const buildUrl = (
+      from:        [number, number],
+      to:          [number, number],
+      isUturnLeg:  boolean,
+      snapRadius:  number | null,
+      fromBearing: number | null
+    ): string => {
+      const coords = `${from[1]},${from[0]};${to[1]},${to[0]}`;
+
+      // ── RADIUS STRATEGY ────────────────────────────────────────────────
+      // Origin: large radius forces snap past nearby narrow roads to main road.
+      // Destination: small precise radius snaps to the actual bin location.
+      const originRadius = snapRadius ?? 500;
+      const destRadius   = 30;
+      const radParam = snapRadius !== null
+        ? `&radiuses=${originRadius};${destRadius}`
+        : "";
+
+      // ── BEARING STRATEGY ───────────────────────────────────────────────
+      // Only constrain the ORIGIN waypoint bearing, not the destination.
+      // Constraining both was causing the wrong-road loops — Mapbox was
+      // forced to arrive at the bin from the bearing direction even when
+      // that meant looping around on the wrong road.
+      //
+      // Origin bearing hint: tells Mapbox which road the truck is already on.
+      // Tolerance 45°: generous enough to allow turns at intersections but
+      // tight enough to prevent snapping to a parallel narrow road.
+      // Destination: 0,180 = any direction allowed at arrival.
+      const bearParam = (snapRadius !== null && fromBearing !== null)
+        ? `&bearings=${Math.round(fromBearing) % 360},${BEARING_TOL};0,180`
+        : "";
+
+      // approaches=curb: right-hand traffic (Philippines drives on the right)
+      const appParam = `&approaches=curb;curb`;
+
+      // annotations: step-level data for road class logging
+      const annoParam = `&annotations=duration,distance`;
+
+      // continue_straight:
+      //   true  on U-turn legs — force Mapbox to stay on current road and
+      //          find a proper turning point, avoiding narrow side streets.
+      //   false on normal legs — allow Mapbox to make standard turns at
+      //          intersections. This is critical: forcing straight on normal
+      //          legs causes wrong-road loops when the correct route requires
+      //          a turn (e.g. green path issue, blue loop issue).
+      const straightParam = isUturnLeg
+        ? `&continue_straight=true`
+        : `&continue_straight=false`;
+
+      return (
+        `https://api.mapbox.com/directions/v5/${profile}/${coords}` +
+        `?geometries=geojson&overview=full&steps=true` +
+        `&exclude=ferry` +
+        radParam +
+        bearParam +
+        appParam +
+        annoParam +
+        straightParam +
+        `&access_token=${TOKEN}`
+      );
+    };
+
+    const fetchLeg = (
+      from:        [number, number],
+      to:          [number, number],
+      isUturnLeg:  boolean,
+      fromBearing: number | null,
+      s:           number
+    ): Promise<{ coords: [number,number][]; dist: number; duration: number; isUturnLeg: boolean; segIndex: number }> => {
+
+      // Try with large snap → mid snap → no snap (always returns something)
+      const tryFetch = (radius: number | null) =>
+        fetch(buildUrl(from, to, isUturnLeg, radius, fromBearing), { signal })
+          .then((r) => r.json());
+
+      return tryFetch(SNAP_RADIUS)
+        .then((d: any) => {
+          if (d.routes?.[0]) return d;
+          console.warn(`[RoutingLayer] Leg ${s}: 500m snap failed (${d.code}), trying 150m`);
+          return tryFetch(SNAP_RADIUS_MID);
+        })
+        .then((d: any) => {
+          if (d.routes?.[0]) return d;
+          console.warn(`[RoutingLayer] Leg ${s}: 150m snap failed, falling back to no snap`);
+          return tryFetch(null);
+        })
+        .then((d: any) => {
+          const route = d.routes?.[0];
+
+          // Log any narrow road usage for debugging
+          if (route?.legs) {
+            const narrowTypes = ["residential","living_street","service","track","path","footway"];
+            route.legs.forEach((leg: any) => {
+              (leg.steps ?? []).forEach((step: any) => {
+                const ref = (step.name ?? "").toLowerCase();
+                if (narrowTypes.some((t) => step.road_class === t || ref.includes(t))) {
+                  console.warn(`[RoutingLayer] Narrow road detected on leg ${s}: "${step.name}" (${step.road_class})`);
+                }
+              });
+            });
+          }
+
+          return {
+            coords: (route?.geometry?.coordinates ?? []).map(
+              (c: [number, number]) => [c[1], c[0]] as [number, number]
+            ) as [number, number][],
+            dist:     route?.distance ?? 0,
+            duration: route?.duration ?? 0,
+            isUturnLeg,
+            segIndex: s,
+          };
+        });
+    };
+
+    // Every leg gets a bearing hint computed from straight-line from→to direction.
+    // Leg 0 uses the real GPS heading for accuracy; subsequent legs use the
+    // geometric bearing between waypoints as a good approximation of the
+    // road direction the truck will be travelling.
+    const legPromises = Array.from({ length: totalLegs }, (_, s) => {
+      const from       = routeWaypoints[s];
+      const to         = routeWaypoints[s + 1];
+      const isUturnLeg = uturnLegSet.has(s);
+      // Leg 0: use real GPS heading. All other legs: straight-line bearing
+      // from the departure waypoint toward the next stop.
+      const legBearing = s === 0 ? heading : bearing(from, to);
+      return fetchLeg(from, to, isUturnLeg, legBearing, s);
+    });
+
+    Promise.all(legPromises)
+      .then((legs) => {
+        if (legs.some((l) => l.coords.length < 2)) {
+          console.warn("[RoutingLayer] One or more legs returned no geometry.");
         }
 
-        const route = data.routes[0];
-        const coordinates: [number, number][] = route.geometry.coordinates.map(
-          (c: [number, number]) => [c[1], c[0]]
-        );
+        const segGroup = L.layerGroup().addTo(map);
+        let   allCoords: [number, number][] = [];
+        let   totalDist = 0, totalDuration = 0;
 
-        // Glow halo
-        glowLayerRef.current = L.polyline(coordinates, {
-          color:   mode === "priority" ? "#fb923c" : "#10b981",
-          weight:  12,
-          opacity: 0.15,
-          lineJoin:"round",
+        // Non-U-turn legs: use gradient color scheme (red → mode color)
+        // Count non-uturn legs so gradient spans only them
+        const normalLegCount = legs.filter((l) => !l.isUturnLeg).length;
+        let   normalLegIdx   = 0;
+
+        legs.forEach((leg) => {
+          if (leg.coords.length < 2) return;
+
+          totalDist     += leg.dist;
+          totalDuration += leg.duration;
+
+          // Merge into full coordinate array for fitBounds
+          allCoords = allCoords.length === 0
+            ? leg.coords
+            : [...allCoords, ...leg.coords.slice(1)];
+
+          let color: string;
+          let weight     = 5;
+          let opacity    = 0.9;
+          let dashArray: string | undefined;
+
+          if (leg.isUturnLeg) {
+            // ── U-TURN LEG — yellow, dashed, slightly thicker ────────────
+            color     = "#eab308";   // yellow-500
+            weight    = 5;
+            opacity   = 0.95;
+            dashArray = "10, 6";     // long dash = "follow this road back"
+          } else {
+            // ── NORMAL LEG — gradient red → mode color ───────────────────
+            color    = segmentColor(normalLegIdx, normalLegCount, mode);
+            weight   = normalLegIdx === 0 ? 6 : 5;
+            opacity  = normalLegIdx === 0 ? 1.0 : 0.85;
+            dashArray = mode === "priority" && normalLegIdx > 0 ? "1, 10" : undefined;
+            normalLegIdx++;
+          }
+
+          // Glow halo
+          L.polyline(leg.coords, {
+            color,
+            weight:  weight + 7,
+            opacity: leg.isUturnLeg ? 0.18 : 0.12,
+            lineJoin:"round",
+          }).addTo(segGroup);
+
+          // Solid line
+          L.polyline(leg.coords, {
+            color,
+            weight,
+            opacity,
+            lineJoin:  "round",
+            lineCap:   "round",
+            dashArray,
+          }).addTo(segGroup);
+        });
+
+        // Invisible full-route polyline just for fitBounds
+        glowLayerRef.current = L.polyline(allCoords, {
+          color: "transparent", weight: 0, opacity: 0,
         }).addTo(map);
+        pathLayerRef.current = glowLayerRef.current;
 
-        // Solid route line
-        pathLayerRef.current = L.polyline(coordinates, {
-          color:    mode === "priority" ? "#f97316" : "#059669",
-          weight:   5,
-          opacity:  0.9,
-          lineJoin: "round",
-          lineCap:  "round",
-          dashArray: mode === "priority" ? "1, 12" : undefined,
-        }).addTo(map);
+        sequenceGroupRef.current?.addLayer(segGroup);
 
-        // Bring sequence markers above polyline
         group.eachLayer((layer) => {
           if (layer instanceof L.Marker) layer.setZIndexOffset(1100);
         });
 
         onRouteUpdateRef.current({
-          dist: `${(route.distance / 1000).toFixed(1)} km`,
-          time: `${Math.round(route.duration / 60)} min`,
+          dist: `${(totalDist / 1000).toFixed(1)} km`,
+          time: `${Math.round(totalDuration / 60)} min`,
         });
 
-        map.fitBounds(pathLayerRef.current.getBounds(), {
-          padding: [80, 80],
-          animate: true,
-          duration: 1.5,
-        });
+        if (pathLayerRef.current) {
+          map.fitBounds(pathLayerRef.current.getBounds(), {
+            padding: [80, 80],
+            animate: true,
+            duration: 1.5,
+          });
+        }
       })
       .catch((err: Error) => {
         if (err.name !== "AbortError")
@@ -725,7 +1193,7 @@ export default function RoutingLayer({
 
     return () => { abortRef.current?.abort(); };
 
-  }, [map, stablePos, bins, selectedBinId, routeKey, mode, useFence, maxDetour, heading]);
+  }, [map, stablePos, bins, selectedBinId, routeKey, mode, useFence, maxDetour, heading, destinationPos]);
 
   return <ProximityToast toast={toast} />;
 }

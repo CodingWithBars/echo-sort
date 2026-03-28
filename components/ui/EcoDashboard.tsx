@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { RealtimePostgresUpdatePayload } from "@supabase/supabase-js";
-import { BinLabelToggleButton } from "../driver/BinMarker"; // ← ADD
+import { BinLabelToggleButton } from "../driver/BinMarker";
 
 const supabase = createClient();
 
@@ -35,35 +35,33 @@ interface DashboardProps {
   setMaxDetour: (v: number) => void;
   useFence: boolean;
   setUseFence: (v: boolean) => void;
-  mapStyle: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12";
-  setMapStyle: (s: "satellite-streets-v12" | "navigation-night-v1" | "outdoors-v12") => void;
 }
 
 export default function EcoDashboard(props: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const { bins, eta, history, isTracking, onRefresh, routingMode, mapStyle } = props;
+  const [isSyncing, setIsSyncing]       = useState(false);
+  const { bins, eta, history, isTracking, onRefresh, routingMode } = props;
 
-  // --- 1. Realtime Sync Logic ---
+  // --- Realtime Sync Logic ---
   useEffect(() => {
     const syncStatus = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const channel = supabase
-        .channel('dashboard-status-sync')
+        .channel("dashboard-status-sync")
         .on(
-          'postgres_changes',
+          "postgres_changes",
           {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'driver_details',
-            filter: `id=eq.${user.id}`
+            event:  "UPDATE",
+            schema: "public",
+            table:  "driver_details",
+            filter: `id=eq.${user.id}`,
           },
           (payload: RealtimePostgresUpdatePayload<DriverDetails>) => {
             const isNowOnDuty = payload.new.duty_status === "ON-DUTY";
-            if (isNowOnDuty && !isTracking) props.onStartTracking();
-            if (!isNowOnDuty && isTracking) props.onStopTracking();
+            if (isNowOnDuty && !isTracking)  props.onStartTracking();
+            if (!isNowOnDuty && isTracking)  props.onStopTracking();
           }
         )
         .subscribe();
@@ -74,7 +72,7 @@ export default function EcoDashboard(props: DashboardProps) {
     syncStatus();
   }, [isTracking, props]);
 
-  // --- 2. Database Toggle Logic ---
+  // --- Database Toggle Logic ---
   const handleToggleTracking = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -89,7 +87,7 @@ export default function EcoDashboard(props: DashboardProps) {
 
     if (!error) {
       if (nextStatus === "ON-DUTY") props.onStartTracking();
-      else props.onStopTracking();
+      else                          props.onStopTracking();
     } else {
       console.error("Failed to update status:", error.message);
     }
@@ -108,7 +106,7 @@ export default function EcoDashboard(props: DashboardProps) {
     <div className="flex flex-col h-full bg-white">
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
 
-        {/* Top Controls */}
+        {/* Mode + Fence Toggle */}
         <ModeSelector
           mode={routingMode}
           setMode={props.setRoutingMode}
@@ -116,13 +114,13 @@ export default function EcoDashboard(props: DashboardProps) {
           setUseFence={props.setUseFence}
         />
 
-        {/* Big Route Card */}
+        {/* Route Summary Card */}
         <RouteSummary eta={eta} mode={routingMode} />
 
-        {/* Detour Config */}
+        {/* Detour Slider */}
         <DetourSlider value={props.maxDetour} onChange={props.setMaxDetour} />
 
-        {/* Status Cards */}
+        {/* Stat Cards */}
         <div className="space-y-3 mb-6">
           <StatCard
             label="Active Stops"
@@ -133,18 +131,15 @@ export default function EcoDashboard(props: DashboardProps) {
           />
         </div>
 
-        {/* Log Section */}
+        {/* Collection Log */}
         <CollectionHistory history={history} onClear={props.onClearHistory} />
-
-        {/* Visual Settings */}
-        <StylePicker current={mapStyle} setStyle={props.setMapStyle} />
       </div>
 
       {/* Persistent Action Footer */}
       <div className="p-5 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-8">
         <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
 
-          {/* ── Tracking + Recalculate (unchanged) ── */}
+          {/* Tracking toggle */}
           <button
             onClick={handleToggleTracking}
             disabled={isSyncing}
@@ -158,6 +153,7 @@ export default function EcoDashboard(props: DashboardProps) {
             {isTracking ? "🛑 Stop Tracking" : "🚀 Launch Tracking"}
           </button>
 
+          {/* Recalculate */}
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
@@ -171,7 +167,7 @@ export default function EcoDashboard(props: DashboardProps) {
             {isRefreshing ? "Optimizing..." : "Recalculate Path"}
           </button>
 
-          {/* ── ADD: Marker label toggle ── */}
+          {/* Marker label toggle */}
           <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-[1.8rem] px-5 py-3">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
               🗺️ Marker Labels
@@ -185,7 +181,7 @@ export default function EcoDashboard(props: DashboardProps) {
   );
 }
 
-// --- Sub-Components (unchanged) ---
+// ─── Sub-Components ───────────────────────────────────────────────────────────
 
 function ModeSelector({ mode, setMode, useFence, setUseFence }: any) {
   return (
@@ -249,7 +245,9 @@ function CollectionHistory({ history, onClear }: any) {
       <div className="flex justify-between items-center mb-3 px-1">
         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Stops</span>
         {onClear && (
-          <button onClick={onClear} className="text-[9px] font-black text-red-400 uppercase hover:underline">Clear</button>
+          <button onClick={onClear} className="text-[9px] font-black text-red-400 uppercase hover:underline">
+            Clear
+          </button>
         )}
       </div>
       <div className="space-y-2">
@@ -258,31 +256,6 @@ function CollectionHistory({ history, onClear }: any) {
             <span className="text-[11px] font-black text-slate-700">🚛 {log.name}</span>
             <span className="text-[9px] font-bold text-slate-400 uppercase">{log.time}</span>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StylePicker({ current, setStyle }: any) {
-  const styles = [
-    { id: "satellite-streets-v12", label: "Satellite", icon: "🛰️" },
-    { id: "navigation-night-v1",   label: "Night",     icon: "🌙" },
-    { id: "outdoors-v12",          label: "Terrain",   icon: "🏔️" },
-  ];
-  return (
-    <div className="mb-4">
-      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Map View</span>
-      <div className="grid grid-cols-3 gap-3">
-        {styles.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setStyle(s.id as any)}
-            className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${current === s.id ? "bg-blue-50 border-blue-400 shadow-md scale-105" : "bg-white border-slate-100 opacity-60 hover:opacity-100"}`}
-          >
-            <span className="text-xl">{s.icon}</span>
-            <span className="text-[9px] font-black uppercase">{s.label}</span>
-          </button>
         ))}
       </div>
     </div>

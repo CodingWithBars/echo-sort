@@ -2,12 +2,55 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
-import DriverMapDisplay from "./DriverMapDisplay";
+import DriverMapDisplay from "./DriverMapDisplayGL";
 import DriverSidebar from "./DriverSidebar";
 import NavigationControls from "../ui/NavigationControls";
-import "leaflet/dist/leaflet.css";
+import type { StyleSpecification } from "maplibre-gl";
 
 const supabase = createClient();
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAP STYLE
+//
+// We deliberately do NOT fetch the Mapbox style JSON.
+// Why: Mapbox style JSON contains proprietary top-level and source-level fields
+// ("name", "metadata", "created", "owner", etc.) that MapLibre's strict
+// validator rejects with "unknown property" — even after stripping the obvious
+// top-level keys, the same fields appear nested inside `sources` objects.
+//
+// Solution: build a minimal MapLibre-valid StyleSpecification ourselves that
+// pulls Mapbox's satellite-streets visual as pre-rendered raster tiles.
+// Mapbox renders the full satellite + streets + labels server-side and
+// delivers 512px tiles — we get the same visual with zero JSON parsing.
+// ─────────────────────────────────────────────────────────────────────────────
+const MAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    "mapbox-sat-streets": {
+      type: "raster",
+      tiles: [
+        `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+      ],
+      tileSize: 512,
+      attribution:
+        '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+  },
+  layers: [
+    {
+      id: "background",
+      type: "background",
+      paint: { "background-color": "#0f172a" },
+    },
+    {
+      id: "satellite-streets",
+      type: "raster",
+      source: "mapbox-sat-streets",
+    },
+  ],
+};
 
 interface BinRow {
   id: number;
@@ -18,7 +61,6 @@ interface BinRow {
   battery_level: number;
 }
 
-// FIX #3: Typed history entry so it can be populated properly
 interface CollectionLog {
   id: number;
   name: string;
@@ -27,43 +69,33 @@ interface CollectionLog {
 
 export default function DriverMap() {
   // --- Data State ---
-  const [bins, setBins] = useState<any[]>([]);
-
-  // FIX #3: history is now populated via addToHistory, not just cleared
-  const [history, setHistory] = useState<CollectionLog[]>([]);
-
-  const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
-  const [heading, setHeading] = useState(0);
-  const [routeKey, setRouteKey] = useState(0);
+  const [bins, setBins]                   = useState<any[]>([]);
+  const [history, setHistory]             = useState<CollectionLog[]>([]);
+  const [driverPos, setDriverPos]         = useState<[number, number] | null>(null);
+  const [heading, setHeading]             = useState(0);
+  const [routeKey, setRouteKey]           = useState(0);
   const [selectedBinId, setSelectedBinId] = useState<number | null>(null);
-  const [isTracking, setIsTracking] = useState(false);
-  const [geoWatchId, setGeoWatchId] = useState<number | null>(null);
-  const [eta, setEta] = useState({ dist: "0 km", time: "0 min" });
+  const [isTracking, setIsTracking]       = useState(false);
+  const [geoWatchId, setGeoWatchId]       = useState<number | null>(null);
+  const [eta, setEta]                     = useState({ dist: "0 km", time: "0 min" });
 
   // --- Settings State ---
   const [routingMode, setRoutingMode] = useState<"fastest" | "priority">("fastest");
-  const [maxDetour, setMaxDetour] = useState(300);
-  const [useFence, setUseFence] = useState(true);
-  const [mapStyle, setMapStyle] = useState("satellite-streets-v12" as any);
+  const [maxDetour, setMaxDetour]     = useState(300);
+  const [useFence, setUseFence]       = useState(true);
 
-  // --- UI Visibility States ---
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // --- UI Visibility ---
+  const [isSidebarOpen, setIsSidebarOpen]           = useState(true);
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
 
   const fetchBins = useCallback(async () => {
     const { data, error } = await supabase.from("bins").select("*");
     if (error) return console.error("Supabase Error:", error.message);
-
     if (data) {
-      const rows = data as BinRow[];
       setBins(
-        rows.map((b) => ({
-          id: b.id,
-          name: b.name,
-          lat: b.lat,
-          lng: b.lng,
-          fillLevel: b.fill_level,
-          batteryLevel: b.battery_level,
+        (data as BinRow[]).map((b) => ({
+          id: b.id, name: b.name, lat: b.lat, lng: b.lng,
+          fillLevel: b.fill_level, batteryLevel: b.battery_level,
         }))
       );
     }
@@ -73,23 +105,15 @@ export default function DriverMap() {
     fetchBins();
     const channel = supabase
       .channel("realtime-bins")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bins" },
-        fetchBins
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, fetchBins)
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [fetchBins]);
 
   const toggleTracking = () => {
     if (isTracking) {
       if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
-      setIsTracking(false);
-      setDriverPos(null);
-      setGeoWatchId(null);
+      setIsTracking(false); setDriverPos(null); setGeoWatchId(null);
     } else {
       setIsTracking(true);
       const id = navigator.geolocation.watchPosition(
@@ -104,11 +128,10 @@ export default function DriverMap() {
     }
   };
 
-  // FIX #3: Exposed so child components (e.g. DriverCollectionNode) can log entries
-  const addToHistory = useCallback((entry: CollectionLog) => {
-    setHistory((prev) => [entry, ...prev]);
-  }, []);
-
+  const addToHistory = useCallback(
+    (entry: CollectionLog) => setHistory((prev) => [entry, ...prev]),
+    []
+  );
   const clearHistory = useCallback(() => setHistory([]), []);
 
   return (
@@ -119,7 +142,6 @@ export default function DriverMap() {
         heading={heading}
       />
 
-      {/* FIX #1: isTracking is now correctly passed to DriverMapDisplay */}
       <DriverMapDisplay
         bins={bins}
         driverPos={driverPos}
@@ -130,42 +152,30 @@ export default function DriverMap() {
         mode={routingMode}
         maxDetour={maxDetour}
         useFence={useFence}
-        mapStyle={mapStyle}
+        mapStyle={MAP_STYLE}
         onRouteUpdate={setEta}
         isTracking={isTracking}
       />
 
-      {/* FIX #2: onClearHistory is now passed so DriverSidebar can forward it */}
       <DriverSidebar
-        // 1. Data Props
         bins={bins}
         eta={eta}
         history={history}
         isTracking={isTracking}
         onClearHistory={clearHistory}
-
-        // 2. Action Props
         onStartTracking={toggleTracking}
         onStopTracking={toggleTracking}
         onRefresh={() => setRouteKey((k) => k + 1)}
-
-        // 3. Settings Props
-        mapStyle={mapStyle}
-        setMapStyle={setMapStyle}
         routingMode={routingMode}
         setRoutingMode={setRoutingMode}
         maxDetour={maxDetour}
         setMaxDetour={setMaxDetour}
         useFence={useFence}
         setUseFence={setUseFence}
-
-        // 4. UI Visibility Props
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         isDashboardVisible={isDashboardVisible}
         setIsDashboardVisible={setIsDashboardVisible}
-
-        // FIX #3: expose addToHistory for collection logging
         onAddToHistory={addToHistory}
       />
     </div>
