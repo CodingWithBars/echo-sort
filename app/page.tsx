@@ -375,26 +375,11 @@ export default function Home() {
 
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{position:"relative"}} onPointerDown={e=>e.stopPropagation()}>
-            <button className="abtn" onClick={()=>{setAuthOpen(o=>!o);setMenuOpen(false);}}>
+            <Link href="#cta">
+              <button className="abtn" >
               Get Started ↗
             </button>
-            {authOpen && (
-              <div className="adrop slide-down">
-                <div style={{padding:"10px 16px 4px",fontSize:9,fontWeight:800,color:"#94a3b8",
-                  letterSpacing:".12em",textTransform:"uppercase",fontFamily:"sans-serif"}}>I am a…</div>
-                <Link href="/login" className="aitem">
-                  <span style={{fontSize:20}}>🔐</span>
-                  <div><div style={{fontWeight:800,fontSize:13}}>Sign In</div>
-                  <div style={{fontSize:10,color:"#64748b"}}>Driver / Admin / Citizen</div></div>
-                </Link>
-                <div style={{height:1,background:"#f1f5f9"}}/>
-                <Link href="/register" className="aitem">
-                  <span style={{fontSize:20}}>🌱</span>
-                  <div><div style={{fontWeight:800,fontSize:13}}>Register as Citizen</div>
-                  <div style={{fontSize:10,color:"#64748b"}}>Track & report bins</div></div>
-                </Link>
-              </div>
-            )}
+            </Link>
           </div>
           <button className="ham" onClick={()=>{setMenuOpen(o=>!o);setAuthOpen(false);}} aria-label="Menu">
             {menuOpen?"✕":"☰"}
@@ -409,8 +394,8 @@ export default function Home() {
             <a key={n.href} href={n.href} className="mlink" onClick={()=>setMenuOpen(false)}>{n.l}</a>
           ))}
           <div className="mdiv"/>
-          <Link href="/login"    className="mlink" style={{color:"#34d399"}} onClick={()=>setMenuOpen(false)}>🔐 Sign In</Link>
-          <Link href="/register" className="mlink" style={{color:"#86efac"}} onClick={()=>setMenuOpen(false)}>🌱 Register as Citizen</Link>
+          <Link href="/login"    className="mlink" style={{color:"#34d399"}}>🔐 Sign In</Link>
+          <Link href="/register" className="mlink" style={{color:"#86efac"}}>🌱 Register as Citizen</Link>
         </div>
       )}
 
@@ -574,7 +559,7 @@ export default function Home() {
                 tracking, and educating citizens on proper disposal — aligned with the law's mandate
                 for community participation.
               </p>
-              <a href="https://emb.gov.ph/ra-9003-the-ecological-solid-waste-management-act-of-2000/"
+              <a href="https://emb.gov.ph/laws-and-policies-solid-waste-management-3/"
                 target="_blank" rel="noopener" className="cb cp csm" style={{display:"inline-flex"}}>
                 Read the Full Law ↗
               </a>
@@ -671,7 +656,7 @@ export default function Home() {
       </section>
 
       {/* CTA */}
-      <section className="sp" style={{background:"linear-gradient(135deg,#022c22 0%,#064e3b 100%)",
+      <section id="cta" className="sp" style={{background:"linear-gradient(135deg,#022c22 0%,#064e3b 100%)",
         textAlign:"center",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",inset:0,opacity:.04,backgroundImage:`url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`}}/>
         <div style={{position:"relative",zIndex:1,maxWidth:540,margin:"0 auto"}}>
