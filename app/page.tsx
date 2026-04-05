@@ -424,7 +424,7 @@ export default function Home() {
             borderRadius:20,padding:"5px 14px",marginBottom:20}}>
             <div style={{width:7,height:7,borderRadius:"50%",background:"#34d399",animation:"pulse 2s infinite"}}/>
             <span style={{fontSize:9,fontWeight:700,color:"#6ee7b7",letterSpacing:".1em",
-              textTransform:"uppercase",fontFamily:"sans-serif"}}>Live · Barangay, Davao Oriental</span>
+              textTransform:"uppercase",fontFamily:"sans-serif"}}>Live · Davao Oriental</span>
           </div>
           <h1 className="anim-2" style={{fontSize:"clamp(34px,9vw,62px)",fontWeight:900,color:"#fff",
             lineHeight:1.06,letterSpacing:"-.03em",margin:"0 0 16px"}}>
