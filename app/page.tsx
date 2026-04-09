@@ -375,9 +375,9 @@ export default function Home() {
 
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{position:"relative"}} onPointerDown={e=>e.stopPropagation()}>
-            <Link href="#cta">
+            <Link href="/login">
               <button className="abtn" >
-              Get Started ↗
+              Dashboard
             </button>
             </Link>
           </div>
@@ -423,7 +423,7 @@ export default function Home() {
             and community complaints.
           </p>
           <div className="hero-btns anim-3">
-            <Link href="/register" className="cb cp cmd">Join as Citizen 🌱</Link>
+            <Link href="/register" className="cb cp cmd">Get Started 🌱</Link>
             <a href="#how" className="cb cg cmd">See How It Works</a>
           </div>
           <div className="hero-stats anim-3">

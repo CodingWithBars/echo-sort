@@ -1,97 +1,249 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+// import { createServerClient } from "@supabase/ssr";
+// import { NextResponse, type NextRequest } from "next/server";
 
+// export async function middleware(request: NextRequest) {
+//   // 1. Initialize the response early
+//   let supabaseResponse = NextResponse.next({
+//     request,
+//   });
+
+//   // 2. Setup Supabase Client
+//   const supabase = createServerClient(
+//     process.env.NEXT_PUBLIC_SUPABASE_URL!,
+//     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+//     {
+//       cookies: {
+//         getAll() {
+//           return request.cookies.getAll();
+//         },
+//         setAll(cookiesToSet) {
+//           cookiesToSet.forEach(({ name, value, options }) => {
+//             request.cookies.set({ name, value, ...options });
+//             supabaseResponse.cookies.set({ name, value, ...options });
+//           });
+//         },
+//       },
+//     }
+//   );
+
+//   // 3. Get the authenticated user
+//   const { data: { user } } = await supabase.auth.getUser();
+//   const { pathname } = request.nextUrl;
+
+//   // FETCH ROLE: Check metadata first, fallback to Profiles table
+//   let userRole = user?.user_metadata?.role;
+
+//   if (user && !userRole) {
+//     const { data: profile } = await supabase
+//       .from("profiles")
+//       .select("role")
+//       .eq("id", user.id)
+//       .single();
+//     userRole = profile?.role;
+//   }
+
+//   // --- SECURITY HEADERS ---
+//   supabaseResponse.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+
+//   // 4. Redirect authenticated users away from Auth pages (/login, /register)
+//   if (user && (pathname === "/login" || pathname === "/register")) {
+//     let dashPath = "/citizen/schedule";
+//     if (userRole === "ADMIN") dashPath = "/admin/dashboard";
+//     if (userRole === "DRIVER") dashPath = "/driver/dashboard";
+    
+//     return NextResponse.redirect(new URL(dashPath, request.url));
+//   }
+
+//   // 5. PROTECTED ROUTE LOGIC
+//   const isAdminPath = pathname.startsWith("/admin");
+//   const isDriverPath = pathname.startsWith("/driver");
+//   const isCitizenPath = pathname.startsWith("/citizen");
+
+//   if (isAdminPath || isDriverPath || isCitizenPath) {
+//     // If not logged in at all, go to login
+//     if (!user) {
+//       const loginUrl = new URL("/login", request.url);
+//       loginUrl.searchParams.set("next", pathname);
+//       return NextResponse.redirect(loginUrl);
+//     }
+
+//     // ADMIN ROUTE PROTECTION
+//     if (isAdminPath && userRole !== "ADMIN") {
+//       // If they are logged in but NOT an admin, send them to their rightful dashboard
+//       const fallback = userRole === "DRIVER" ? "/driver/dashboard" : "/citizen/schedule";
+//       return NextResponse.redirect(new URL(fallback, request.url));
+//     }
+
+//     // DRIVER ROUTE PROTECTION
+//     if (isDriverPath && userRole !== "DRIVER") {
+//       const fallback = userRole === "ADMIN" ? "/admin/dashboard" : "/citizen/schedule";
+//       return NextResponse.redirect(new URL(fallback, request.url));
+//     }
+
+//     // CITIZEN ROUTE PROTECTION (Strict)
+//     // We allow ADMINS to see citizen paths for management/testing
+//     if (isCitizenPath && userRole !== "CITIZEN" && userRole !== "ADMIN") {
+//       return NextResponse.redirect(new URL("/login", request.url));
+//     }
+//   }
+
+//   return supabaseResponse;
+// }
+
+// export const config = {
+//   matcher: [
+//     "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+//   ],
+// };
+
+// middleware.ts  (place at project root, same level as /app)
+//
+// Protects all role-specific routes.
+// Reads the Supabase session from the request cookies and checks the
+// user's role from the profiles table before allowing access.
+//
+// Flow:
+//   1. Public routes (/login, /register, /) pass through with no check.
+//   2. Protected routes read the session cookie.
+//   3. No session → redirect to /login.
+//   4. Wrong role for the requested route → redirect to their correct dashboard.
+
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Role → allowed path prefixes
+// A user may access any route that starts with one of their allowed prefixes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ROLE_ALLOWED_PREFIXES: Record<string, string[]> = {
+  SUPER_ADMIN: ["/super-admin"],
+  ADMIN:       ["/admin"],
+  DRIVER:      ["/driver"],
+  LGU:         ["/lgu"],
+  CITIZEN:     ["/citizen"],
+};
+
+// Where to send each role after a wrong-route redirect
+const ROLE_HOME: Record<string, string> = {
+  SUPER_ADMIN: "/super-admin/dashboard",
+  ADMIN:       "/admin/dashboard",
+  DRIVER:      "/driver/dashboard",
+  LGU:         "/lgu/dashboard",
+  CITIZEN:     "/citizen/schedule",
+};
+
+// Routes that never need a session check
+const PUBLIC_PATHS = ["/login", "/register", "/", "/_next", "/icons", "/favicon"];
+
+// All protected route prefixes (anything under these requires a session)
+const PROTECTED_PREFIXES = [
+  "/super-admin",
+  "/admin",
+  "/driver",
+  "/lgu",
+  "/citizen",
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 export async function middleware(request: NextRequest) {
-  // 1. Initialize the response early
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  const { pathname } = request.nextUrl;
 
-  // 2. Setup Supabase Client
+  // ── 1. Always allow public paths ──────────────────────────────────────────
+  const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));
+  if (isPublic) return NextResponse.next();
+
+  // ── 2. Only intercept protected routes ────────────────────────────────────
+  const isProtected = PROTECTED_PREFIXES.some(p => pathname.startsWith(p));
+  if (!isProtected) return NextResponse.next();
+
+  // ── 3. Build Supabase server client (reads cookies, writes refreshed tokens)
+  let response = NextResponse.next({ request: { headers: request.headers } });
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll();
+        get(name: string) {
+          return request.cookies.get(name)?.value;
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set({ name, value, ...options });
-            supabaseResponse.cookies.set({ name, value, ...options });
-          });
+        set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({ name, value, ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          request.cookies.set({ name, value: "", ...options });
+          response = NextResponse.next({ request: { headers: request.headers } });
+          response.cookies.set({ name, value: "", ...options });
         },
       },
     }
   );
 
-  // 3. Get the authenticated user
-  const { data: { user } } = await supabase.auth.getUser();
-  const { pathname } = request.nextUrl;
+  // ── 4. Get session ─────────────────────────────────────────────────────────
+  const { data: { session } } = await supabase.auth.getSession();
 
-  // FETCH ROLE: Check metadata first, fallback to Profiles table
-  let userRole = user?.user_metadata?.role;
-
-  if (user && !userRole) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    userRole = profile?.role;
+  if (!session) {
+    // No session → send to login, preserve the intended destination
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("message", "Please sign in to continue.");
+    return NextResponse.redirect(loginUrl);
   }
 
-  // --- SECURITY HEADERS ---
-  supabaseResponse.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+  // ── 5. Fetch role from profiles ────────────────────────────────────────────
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, is_archived")
+    .eq("id", session.user.id)
+    .single();
 
-  // 4. Redirect authenticated users away from Auth pages (/login, /register)
-  if (user && (pathname === "/login" || pathname === "/register")) {
-    let dashPath = "/citizen/schedule";
-    if (userRole === "ADMIN") dashPath = "/admin/dashboard";
-    if (userRole === "DRIVER") dashPath = "/driver/dashboard";
-    
-    return NextResponse.redirect(new URL(dashPath, request.url));
+  // No profile or archived → sign out and redirect
+  if (!profile || profile.is_archived) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("message", "Your account is not accessible.");
+    // Clear the session cookie so they're fully signed out
+    response = NextResponse.redirect(loginUrl);
+    response.cookies.delete("sb-access-token");
+    response.cookies.delete("sb-refresh-token");
+    return response;
   }
 
-  // 5. PROTECTED ROUTE LOGIC
-  const isAdminPath = pathname.startsWith("/admin");
-  const isDriverPath = pathname.startsWith("/driver");
-  const isCitizenPath = pathname.startsWith("/citizen");
+  const role: string = profile.role ?? "CITIZEN";
 
-  if (isAdminPath || isDriverPath || isCitizenPath) {
-    // If not logged in at all, go to login
-    if (!user) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("next", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
+  // ── 6. Check role is allowed on this path ─────────────────────────────────
+  const allowedPrefixes = ROLE_ALLOWED_PREFIXES[role] ?? ["/citizen"];
+  const isAllowed = allowedPrefixes.some(prefix => pathname.startsWith(prefix));
 
-    // ADMIN ROUTE PROTECTION
-    if (isAdminPath && userRole !== "ADMIN") {
-      // If they are logged in but NOT an admin, send them to their rightful dashboard
-      const fallback = userRole === "DRIVER" ? "/driver/dashboard" : "/citizen/schedule";
-      return NextResponse.redirect(new URL(fallback, request.url));
-    }
-
-    // DRIVER ROUTE PROTECTION
-    if (isDriverPath && userRole !== "DRIVER") {
-      const fallback = userRole === "ADMIN" ? "/admin/dashboard" : "/citizen/schedule";
-      return NextResponse.redirect(new URL(fallback, request.url));
-    }
-
-    // CITIZEN ROUTE PROTECTION (Strict)
-    // We allow ADMINS to see citizen paths for management/testing
-    if (isCitizenPath && userRole !== "CITIZEN" && userRole !== "ADMIN") {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
+  if (!isAllowed) {
+    // Wrong section → redirect to their correct home
+    const correctHome = ROLE_HOME[role] ?? "/citizen/schedule";
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = correctHome;
+    return NextResponse.redirect(redirectUrl);
   }
 
-  return supabaseResponse;
+  // ── 7. All good — pass through with refreshed cookies ─────────────────────
+  return response;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Matcher: run middleware on all routes except static files and API
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    /*
+     * Match all request paths EXCEPT:
+     * - _next/static  (static files)
+     * - _next/image   (image optimization)
+     * - favicon.ico
+     * - /icons/       (PWA icons)
+     * - /api/         (API routes handle their own auth)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|icons|api).*)",
   ],
 };
