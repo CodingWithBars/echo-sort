@@ -1,7 +1,6 @@
 "use client";
 // ─────────────────────────────────────────────────────────────────────────────
 // app/citizen/dashboard/page.tsx
-// All features from the schedule page, restyled with the sidebar dashboard UI
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -10,13 +9,17 @@ import { createClient } from "@/utils/supabase/client";
 import dynamic from "next/dynamic";
 import {
   MapPin, Calendar, TrendingUp, Flag, Bell, LogOut, Menu, X,
-  RefreshCw, ChevronRight, CheckCircle, AlertTriangle, Info,
-  Trash2, Clock, Megaphone, Shield, FileText,
+  CheckCircle, AlertTriangle, Info, Trash2, Megaphone,
+  Shield, FileText, Search,
 } from "lucide-react";
+import CitizenProfileView from "@/components/citizen/CitizenProfileView";
 
 const supabase = createClient();
 
-const CitizenBinMap = dynamic(() => import("@/components/citizen/CitizenBinMap"), { ssr: false });
+const CitizenBinMap = dynamic(
+  () => import("@/components/citizen/CitizenBinMap"),
+  { ssr: false }
+);
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 
@@ -27,11 +30,12 @@ interface CitizenProfile {
   address_street: string; service_type: string;
   avatar_url?: string | null;
 }
-interface ScoreRecord   { score: number; score_month: string; violations_count: number; warnings_count: number; resolved_count: number; }
-interface Violation     { id: string; type: string; description: string; status: string; created_at: string; resolved_at: string | null; }
-interface Schedule      { id: string; label: string; day_of_week: number | null; scheduled_time: string | null; waste_types: string[]; notes: string | null; is_active: boolean; }
-interface Broadcast     { id: string; title: string; body: string; type: string; is_pinned: boolean; created_at: string; }
-interface Notif         { id: string; type: string; title: string; body: string; is_read: boolean; created_at: string; }
+interface ScoreRecord { score: number; score_month: string; violations_count: number; warnings_count: number; resolved_count: number; }
+interface Violation   { id: string; type: string; description: string; status: string; created_at: string; resolved_at: string | null; }
+interface Schedule    { id: string; label: string; day_of_week: number | null; scheduled_time: string | null; waste_types: string[]; notes: string | null; is_active: boolean; }
+interface Broadcast   { id: string; title: string; body: string; type: string; is_pinned: boolean; created_at: string; }
+interface Notif       { id: string; type: string; title: string; body: string; is_read: boolean; created_at: string; }
+interface CitizenPeer { id: string; full_name: string; purok: string; }
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 
@@ -42,9 +46,9 @@ const VIOLATION_TYPES = [
   "Prohibited Area Dumping","Hazardous Waste Mishandling",
 ];
 const STATUS_CFG: Record<string,{dot:string;badge:string}> = {
-  Pending:        { dot:"bg-amber-400",    badge:"bg-amber-50 text-amber-800 border-amber-200"       },
-  "Under Review": { dot:"bg-blue-400",     badge:"bg-blue-50 text-blue-800 border-blue-200"         },
-  Resolved:       { dot:"bg-emerald-500",  badge:"bg-emerald-50 text-emerald-800 border-emerald-200" },
+  Pending:        {dot:"bg-amber-400",   badge:"bg-amber-50 text-amber-800 border-amber-200"},
+  "Under Review": {dot:"bg-blue-400",    badge:"bg-blue-50 text-blue-800 border-blue-200"},
+  Resolved:       {dot:"bg-emerald-500", badge:"bg-emerald-50 text-emerald-800 border-emerald-200"},
 };
 const BROADCAST_ICON: Record<string,string> = {
   AWARENESS:"🌿", SCHEDULE_CHANGE:"📅", NOTICE:"📋", WARNING:"⚠️", EVENT:"🎪",
@@ -57,12 +61,12 @@ const scoreTier  = (s:number) => s>=90?"Excellent":s>=70?"Good":s>=50?"Fair":s>=
 
 const timeAgo = (iso:string) => {
   if (!iso) return "—";
-  const diff = Date.now()-new Date(iso).getTime(), m=Math.floor(diff/60000);
+  const d=Date.now()-new Date(iso).getTime(), m=Math.floor(d/60000);
   if (m<1) return "just now"; if (m<60) return `${m}m ago`;
   const h=Math.floor(m/60); if (h<24) return `${h}h ago`;
   return `${Math.floor(h/24)}d ago`;
 };
-const fmtTime = (t:string|null) => {
+const fmtTime  = (t:string|null) => {
   if (!t) return "—";
   const [h,m]=t.split(":"), hr=parseInt(h);
   return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`;
@@ -112,23 +116,83 @@ function LogoutModal({onConfirm,onCancel,loading}:{onConfirm:()=>void;onCancel:(
 }
 
 // ── REPORT MODAL ───────────────────────────────────────────────────────────────
+// Loads all citizens in the reporter's barangay so reporter can pick who to report.
+// reported_id is sent to the DB — LGU can see it, but the citizen-facing view hides it.
 
 function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}) {
-  const [type,      setType]      = useState(VIOLATION_TYPES[0]);
-  const [desc,      setDesc]      = useState("");
-  const [proofUrls, setProofUrls] = useState<string[]>([]);
-  const [urlInput,  setUrlInput]  = useState("");
-  const [saving,    setSaving]    = useState(false);
-  const [success,   setSuccess]   = useState(false);
-  const [error,     setError]     = useState("");
+  const [type,        setType]        = useState(VIOLATION_TYPES[0]);
+  const [desc,        setDesc]        = useState("");
+  const [proofUrls,   setProofUrls]   = useState<string[]>([]);
+  const [urlInput,    setUrlInput]    = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [success,     setSuccess]     = useState(false);
+  const [error,       setError]       = useState("");
 
-  const addUrl = () => { if (urlInput.trim()){setProofUrls(p=>[...p,urlInput.trim()]);setUrlInput("");} };
-  const submit = async () => {
+  // Peer selection
+  const [peers,       setPeers]       = useState<CitizenPeer[]>([]);
+  const [peersLoading,setPeersLoading]= useState(true);
+  const [peerSearch,  setPeerSearch]  = useState("");
+  const [reportedId,  setReportedId]  = useState<string>("");
+  const [dropOpen,    setDropOpen]    = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  // Load peers on mount
+  useEffect(()=>{
+    (async()=>{
+      // Get all citizen IDs in the same barangay
+      const {data:cds}=await supabase
+        .from("citizen_details")
+        .select("id,purok")
+        .eq("barangay",profile.barangay);
+
+      if (!cds||cds.length===0){setPeersLoading(false);return;}
+
+      const ids=cds.map((c:any)=>c.id).filter((id:string)=>id!==profile.id); // exclude self
+      if (ids.length===0){setPeersLoading(false);return;}
+
+      const {data:profiles}=await supabase
+        .from("profiles")
+        .select("id,full_name")
+        .in("id",ids)
+        .eq("role","CITIZEN")
+        .eq("is_archived",false)
+        .order("full_name");
+
+      const purokMap=Object.fromEntries(cds.map((c:any)=>[c.id,c.purok]));
+      setPeers((profiles??[]).map((p:any)=>({
+        id:p.id, full_name:p.full_name??"Unknown", purok:purokMap[p.id]??"",
+      })));
+      setPeersLoading(false);
+    })();
+  },[profile.barangay,profile.id]);
+
+  // Close dropdown on outside click
+  useEffect(()=>{
+    if (!dropOpen) return;
+    const h=(e:MouseEvent)=>{if(dropRef.current&&!dropRef.current.contains(e.target as Node))setDropOpen(false);};
+    document.addEventListener("mousedown",h);
+    return ()=>document.removeEventListener("mousedown",h);
+  },[dropOpen]);
+
+  const filteredPeers=peers.filter(p=>
+    p.full_name.toLowerCase().includes(peerSearch.toLowerCase())||
+    p.purok.toLowerCase().includes(peerSearch.toLowerCase())
+  );
+  const selectedPeer=peers.find(p=>p.id===reportedId);
+
+  const addUrl=()=>{ if(urlInput.trim()){setProofUrls(p=>[...p,urlInput.trim()]);setUrlInput("");} };
+
+  const submit=async()=>{
     if (!desc.trim()){setError("Please describe the incident.");return;}
-    setSaving(true);setError("");
+    if (!reportedId){setError("Please select the citizen you are reporting.");return;}
+    setSaving(true); setError("");
     const {error:err}=await supabase.from("citizen_reports").insert({
-      reporter_id:profile.id,barangay:profile.barangay,
-      type,description:desc.trim(),proof_urls:proofUrls,status:"Submitted",
+      reporter_id:profile.id,
+      reported_id:reportedId,          // ← stored in DB, visible to LGU only
+      barangay:profile.barangay,
+      type, description:desc.trim(),
+      proof_urls:proofUrls,
+      status:"Submitted",
     });
     setSaving(false);
     if (err){setError(err.message);return;}
@@ -138,17 +202,17 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose}/>
-      <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
 
         {/* Header */}
-        <div className="bg-emerald-50 border-b border-emerald-100 px-8 py-6 flex items-center justify-between">
+        <div className="bg-emerald-50 border-b border-emerald-100 px-8 py-6 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-red-100 rounded-[1.2rem] flex items-center justify-center">
               <Flag size={20} className="text-red-600"/>
             </div>
             <div>
               <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tight">Report a Violation</h3>
-              <p className="text-xs text-emerald-600 font-black uppercase tracking-widest">Your identity is kept confidential</p>
+              <p className="text-xs text-emerald-600 font-black uppercase tracking-widest">Identity kept confidential</p>
             </div>
           </div>
           <button onClick={onClose} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all">
@@ -162,20 +226,112 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
               <CheckCircle size={36} className="text-emerald-600"/>
             </div>
             <h3 className="text-2xl font-black text-slate-900 uppercase italic mb-3">Report Submitted!</h3>
-            <p className="text-sm text-slate-500 mb-8 leading-relaxed">Your report has been submitted and will be reviewed by your LGU official. Your identity is kept confidential.</p>
+            <p className="text-sm text-slate-500 mb-8 leading-relaxed">
+              Your report has been submitted to your LGU officer for review. Your identity is kept confidential — the reported citizen will not know who filed this.
+            </p>
             <button onClick={onClose} className="px-8 py-4 bg-emerald-600 text-white rounded-[1.5rem] font-black text-xs uppercase shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all">
               Done
             </button>
           </div>
         ):(
           <div className="p-8 space-y-5">
+
+            {/* Confidentiality notice */}
             <div className="flex gap-3 items-start p-4 bg-amber-50 rounded-[1.5rem] border border-amber-200">
               <Shield size={16} className="text-amber-600 flex-shrink-0 mt-0.5"/>
               <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                Your name will <strong>NOT</strong> be shown to the reported person. Only your LGU officer can see who filed this report.
+                Your name will <strong>NOT</strong> be shown to the reported person. Only your LGU officer can see who filed this report and who is being reported.
               </p>
             </div>
 
+            {/* ── WHO ARE YOU REPORTING? ── */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
+                Who are you reporting? *
+              </label>
+
+              {peersLoading?(
+                <div className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm text-slate-400 italic">
+                  Loading citizens…
+                </div>
+              ):(
+                <div ref={dropRef} className="relative">
+                  {/* Trigger */}
+                  <button
+                    type="button"
+                    onClick={()=>setDropOpen(o=>!o)}
+                    className={`w-full px-4 py-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                      reportedId
+                        ?"border-emerald-400 bg-emerald-50"
+                        :"border-slate-200 bg-slate-50 hover:border-emerald-300"
+                    }`}
+                  >
+                    {selectedPeer?(
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-black text-sm flex-shrink-0">
+                          {selectedPeer.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-900 truncate">{selectedPeer.full_name}</p>
+                          {selectedPeer.purok&&<p className="text-[10px] text-slate-400 font-bold">{selectedPeer.purok}</p>}
+                        </div>
+                      </div>
+                    ):(
+                      <span className="text-sm text-slate-400 italic">Select a citizen from your barangay…</span>
+                    )}
+                    <span className={`text-slate-400 transition-transform ml-2 flex-shrink-0 ${dropOpen?"rotate-180":""}`}>▼</span>
+                  </button>
+
+                  {/* Dropdown */}
+                  {dropOpen&&(
+                    <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 bg-white rounded-[1.5rem] border border-slate-200 shadow-2xl overflow-hidden animate-in slide-in-from-top-2 duration-150">
+                      {/* Search */}
+                      <div className="p-3 border-b border-slate-100">
+                        <div className="relative">
+                          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                          <input
+                            value={peerSearch}
+                            onChange={e=>setPeerSearch(e.target.value)}
+                            placeholder="Search by name or purok…"
+                            autoFocus
+                            className="w-full pl-8 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-slate-50 outline-none focus:border-emerald-400 focus:bg-white transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* List */}
+                      <div className="max-h-52 overflow-y-auto">
+                        {filteredPeers.length===0?(
+                          <div className="py-6 text-center text-sm text-slate-400 italic">
+                            {peerSearch?"No citizens match your search":"No other citizens in your barangay"}
+                          </div>
+                        ):filteredPeers.map(p=>(
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={()=>{setReportedId(p.id);setDropOpen(false);setPeerSearch("");}}
+                            className={`w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-emerald-50 transition-colors ${reportedId===p.id?"bg-emerald-50":""}`}
+                          >
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0 ${reportedId===p.id?"bg-emerald-600":"bg-slate-400"}`}>
+                              {p.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-black truncate ${reportedId===p.id?"text-emerald-700":"text-slate-900"}`}>
+                                {p.full_name}
+                              </p>
+                              {p.purok&&<p className="text-[10px] text-slate-400 font-bold">{p.purok}</p>}
+                            </div>
+                            {reportedId===p.id&&<CheckCircle size={14} className="text-emerald-600 flex-shrink-0"/>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Violation type */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Violation Type *</label>
               <select value={type} onChange={e=>setType(e.target.value)}
@@ -184,6 +340,7 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
               </select>
             </div>
 
+            {/* Description */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Description *</label>
               <textarea value={desc} onChange={e=>setDesc(e.target.value)}
@@ -191,6 +348,7 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
                 className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 text-sm outline-none focus:border-emerald-400 focus:bg-white transition-all resize-none leading-relaxed"/>
             </div>
 
+            {/* Proof links */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Proof Links (optional)</label>
               <div className="flex gap-2">
@@ -222,7 +380,7 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
               <button onClick={onClose} className="flex-1 py-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 text-slate-600 font-black text-xs uppercase hover:bg-slate-100 transition-all">
                 Cancel
               </button>
-              <button onClick={submit} disabled={saving||!desc.trim()}
+              <button onClick={submit} disabled={saving||!desc.trim()||!reportedId}
                 className="flex-1 py-4 rounded-[1.5rem] bg-red-600 text-white font-black text-xs uppercase shadow-lg shadow-red-100 disabled:opacity-40 hover:bg-red-700 transition-all flex items-center justify-center gap-2">
                 <Flag size={14}/>{saving?"Submitting…":"Submit Report"}
               </button>
@@ -281,21 +439,23 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
 
 // ── MAIN PAGE ──────────────────────────────────────────────────────────────────
 
+type Tab = "map" | "schedule" | "score" | "news" | "profile";
+
 export default function CitizenDashboard() {
   const router = useRouter();
-  const [profile,       setProfile]       = useState<CitizenProfile|null>(null);
-  const [scores,        setScores]        = useState<ScoreRecord[]>([]);
-  const [violations,    setViolations]    = useState<Violation[]>([]);
-  const [schedules,     setSchedules]     = useState<Schedule[]>([]);
-  const [broadcasts,    setBroadcasts]    = useState<Broadcast[]>([]);
-  const [notifs,        setNotifs]        = useState<Notif[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [activeTab,     setActiveTab]     = useState<"map"|"schedule"|"score"|"news">("map");
-  const [showReport,    setShowReport]    = useState(false);
-  const [notifOpen,     setNotifOpen]     = useState(false);
-  const [isSidebarOpen, setSidebarOpen]   = useState(false);
-  const [showLogout,    setShowLogout]    = useState(false);
-  const [isLoggingOut,  setIsLoggingOut]  = useState(false);
+  const [profile,       setProfile]      = useState<CitizenProfile|null>(null);
+  const [scores,        setScores]       = useState<ScoreRecord[]>([]);
+  const [violations,    setViolations]   = useState<Violation[]>([]);
+  const [schedules,     setSchedules]    = useState<Schedule[]>([]);
+  const [broadcasts,    setBroadcasts]   = useState<Broadcast[]>([]);
+  const [notifs,        setNotifs]       = useState<Notif[]>([]);
+  const [loading,       setLoading]      = useState(true);
+  const [activeTab,     setActiveTab]    = useState<Tab>("map");
+  const [showReport,    setShowReport]   = useState(false);
+  const [notifOpen,     setNotifOpen]    = useState(false);
+  const [isSidebarOpen, setSidebarOpen]  = useState(false);
+  const [showLogout,    setShowLogout]   = useState(false);
+  const [isLoggingOut,  setIsLoggingOut] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -305,14 +465,13 @@ export default function CitizenDashboard() {
     return ()=>document.removeEventListener("mousedown",h);
   },[notifOpen]);
 
-  const fetchData = useCallback(async()=>{
+  const fetchData=useCallback(async()=>{
     const {data:{user}}=await supabase.auth.getUser();
     if (!user){router.push("/login");return;}
     const {data:p}=await supabase.from("profiles").select("id,full_name,email,contact_number,warning_count,avatar_url").eq("id",user.id).single();
     const {data:cd}=await supabase.from("citizen_details").select("barangay,municipality,purok,address_street,service_type").eq("id",user.id).single();
     if (!p||!cd){router.push("/login");return;}
-    const prof:CitizenProfile={...p,...cd};
-    setProfile(prof);
+    setProfile({...p,...cd});
     const [{data:sc},{data:viol},{data:sched},{data:bc},{data:nd}]=await Promise.all([
       supabase.from("citizen_scores").select("*").eq("citizen_id",user.id).order("score_month",{ascending:false}).limit(12),
       supabase.from("violations").select("*").eq("citizen_id",user.id).order("created_at",{ascending:false}),
@@ -328,7 +487,7 @@ export default function CitizenDashboard() {
 
   useEffect(()=>{
     if (!profile?.id) return;
-    const ch=supabase.channel("cit-notifs")
+    const ch=supabase.channel("cit-notifs-dash")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications",filter:`user_id=eq.${profile.id}`},
         (payload:any)=>{setNotifs(p=>[payload.new as Notif,...p].slice(0,30));})
       .subscribe();
@@ -354,8 +513,9 @@ export default function CitizenDashboard() {
     {id:"schedule", label:"Schedule",      icon:"📅"},
     {id:"score",    label:"My Score",      icon:"⭐"},
     {id:"news",     label:"Barangay News", icon:"📢"},
-  ];
-  const currentLabel=menuItems.find(m=>m.id===activeTab)?.label??"Dashboard";
+  ] as const;
+
+  const currentLabel=menuItems.find(m=>m.id===activeTab)?.label ?? (activeTab==="profile"?"My Profile":"Dashboard");
 
   if (loading) return (
     <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
@@ -369,12 +529,12 @@ export default function CitizenDashboard() {
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
 
-      {/* ── SIDEBAR ───────────────────────────────────────────────────── */}
+      {/* ── SIDEBAR ── */}
       <aside className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen?"translate-x-0 shadow-2xl":"-translate-x-full"}`}>
 
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100 border border-emerald-50">
+            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100">
               <Trash2 size={20} className="text-white"/>
             </div>
             <div>
@@ -384,22 +544,21 @@ export default function CitizenDashboard() {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-2">
+        <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto">
           <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic opacity-70">Citizen Portal</p>
-
           {menuItems.map(item=>(
             <button key={item.id}
-              onClick={()=>{setActiveTab(item.id as any);setSidebarOpen(false);}}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 group ${
+              onClick={()=>{setActiveTab(item.id);setSidebarOpen(false);}}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 ${
                 activeTab===item.id
                   ?"bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold"
-                  :"text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
-              }`}>
+                  :"text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"}`}>
               <span className="text-xl">{item.icon}</span>
               <span className="text-sm font-black uppercase tracking-tight">{item.label}</span>
             </button>
           ))}
 
+          {/* Report button */}
           <button onClick={()=>{setShowReport(true);setSidebarOpen(false);}}
             className="w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 text-red-400 hover:bg-red-50 hover:text-red-600 mt-2">
             <Flag size={20}/>
@@ -407,7 +566,7 @@ export default function CitizenDashboard() {
           </button>
         </nav>
 
-        {/* Score pill */}
+        {/* Score pill in sidebar */}
         <div className="px-6 mb-3">
           <div className={`flex items-center justify-between px-5 py-3 rounded-[2rem] border ${scoreBg(currentScore)}`}>
             <div>
@@ -431,7 +590,7 @@ export default function CitizenDashboard() {
       {/* Sidebar overlay */}
       {isSidebarOpen&&<div className="fixed inset-0 bg-black/30 z-[2000] lg:hidden" onClick={()=>setSidebarOpen(false)}/>}
 
-      {/* ── MAIN ──────────────────────────────────────────────────────── */}
+      {/* ── MAIN ── */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
 
         {/* Header */}
@@ -449,7 +608,7 @@ export default function CitizenDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Bell */}
+            {/* Notification bell */}
             <div ref={notifRef} className="relative">
               <button onClick={()=>setNotifOpen(o=>!o)}
                 className={`w-10 h-10 rounded-2xl border flex items-center justify-center transition-all relative ${notifOpen?"bg-emerald-50 border-emerald-200":"bg-white border-slate-100 hover:border-emerald-200"}`}>
@@ -459,14 +618,16 @@ export default function CitizenDashboard() {
               {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
             </div>
 
-            {/* Profile badge */}
+            {/* ── PROFILE BADGE — clicking opens CitizenProfileView ── */}
             <button
-              className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.8rem] border transition-all duration-500 ${
-                activeTab==="score"
+              onClick={()=>setActiveTab(activeTab==="profile"?"map":"profile")}
+              className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.8rem] border transition-all duration-300 ${
+                activeTab==="profile"
                   ?"bg-slate-950 border-slate-900 shadow-xl"
-                  :"bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"
-              }`}>
-              <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border transition-all duration-500 ${activeTab==="score"?"border-emerald-500/50 scale-105":"border-slate-200"}`}>
+                  :"bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"}`}
+            >
+              {/* Avatar */}
+              <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border transition-all duration-300 ${activeTab==="profile"?"border-emerald-500/50 scale-105":"border-slate-200"}`}>
                 {profile?.avatar_url?(
                   <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
                 ):(
@@ -475,13 +636,14 @@ export default function CitizenDashboard() {
                   </div>
                 )}
               </div>
+              {/* Name + status */}
               <div className="text-left hidden md:block">
-                <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${activeTab==="score"?"text-white":"text-slate-900"}`}>
+                <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${activeTab==="profile"?"text-white":"text-slate-900"}`}>
                   {profile?.full_name??"Valued Citizen"}
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
-                  <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${activeTab==="score"?"text-emerald-400/80":"text-slate-400"}`}>
+                  <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${activeTab==="profile"?"text-emerald-400/80":"text-slate-400"}`}>
                     {profile?.purok} • Authorized
                   </p>
                 </div>
@@ -562,9 +724,7 @@ export default function CitizenDashboard() {
                 </div>
                 <div>
                   <p className="text-xs font-black text-emerald-300 uppercase tracking-widest mb-2">RA 9003 Reminder</p>
-                  <p className="text-xs text-emerald-100/70 leading-relaxed">
-                    Properly segregate your waste before collection day. Separate Biodegradable, Recyclable, and Residual waste. Violations may result in warnings on your account.
-                  </p>
+                  <p className="text-xs text-emerald-100/70 leading-relaxed">Properly segregate your waste before collection day. Separate Biodegradable, Recyclable, and Residual waste. Violations may result in warnings on your account.</p>
                 </div>
               </div>
             </div>
@@ -578,7 +738,6 @@ export default function CitizenDashboard() {
                 <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">Your RA 9003 compliance record</p>
               </div>
 
-              {/* Score hero */}
               <div className="bg-white rounded-[3rem] border border-slate-100 p-8 shadow-sm flex flex-col sm:flex-row gap-6 items-center">
                 <div className="flex-shrink-0"><ScoreRing score={currentScore} size={130}/></div>
                 <div className="flex-1 min-w-0 w-full">
@@ -600,7 +759,6 @@ export default function CitizenDashboard() {
                 </div>
               </div>
 
-              {/* Score history */}
               {scores.length>1&&(
                 <div className="bg-white rounded-[2.5rem] border border-slate-100 p-6 shadow-sm">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5">Score History</p>
@@ -619,7 +777,6 @@ export default function CitizenDashboard() {
                 </div>
               )}
 
-              {/* Violations list */}
               <div className="bg-white rounded-[2.5rem] border border-slate-100 p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-5">
                   <AlertTriangle size={15} className="text-emerald-600"/>
@@ -649,7 +806,6 @@ export default function CitizenDashboard() {
                 })}
               </div>
 
-              {/* How it works */}
               <div className="bg-amber-50 rounded-[2rem] border border-amber-200 p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Info size={15} className="text-amber-600"/>
@@ -673,7 +829,6 @@ export default function CitizenDashboard() {
                 <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">Barangay News</h2>
                 <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">Updates from Barangay {profile?.barangay}</p>
               </div>
-
               {broadcasts.length===0?(
                 <div className="bg-white rounded-[3rem] border border-slate-100 p-12 text-center shadow-sm">
                   <Megaphone size={40} className="text-slate-200 mx-auto mb-4"/>
@@ -697,14 +852,22 @@ export default function CitizenDashboard() {
               })}
             </div>
           )}
+
+          {/* PROFILE — CitizenProfileView */}
+          {activeTab==="profile"&&(
+            <div className="max-w-3xl mx-auto p-6 lg:p-10 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="mb-6">
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">My Profile</h2>
+                <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">
+                  {profile?.full_name} · {profile?.barangay}
+                </p>
+              </div>
+              {/* CitizenProfileView handles its own data fetch */}
+              <CitizenProfileView/>
+            </div>
+          )}
         </div>
       </main>
-
-      {/* Floating report button */}
-      <button onClick={()=>setShowReport(true)}
-        className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 px-6 py-4 rounded-[2rem] bg-red-600 text-white font-black text-xs uppercase shadow-2xl shadow-red-200 hover:bg-red-700 active:scale-95 transition-all animate-in slide-in-from-bottom-4 duration-700">
-        <Flag size={15}/> Report Violation
-      </button>
 
       {/* Modals */}
       {showReport&&profile&&<ReportModal profile={profile} onClose={()=>setShowReport(false)}/>}
