@@ -69,7 +69,21 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
 
   const fetchBins = useCallback(async () => {
-    const { data } = await supabase.from("bins").select("id,name,lat,lng,fill_level,battery_level");
+    // Scope bins to driver's municipality — get it from their schedule assignments
+    const { data: { user } } = await supabase.auth.getUser();
+    let muni: string | null = null;
+    if (user) {
+      const { data: sched } = await supabase
+        .from("schedule_assignments")
+        .select("collection_schedules!inner(municipality)")
+        .eq("driver_id", user.id)
+        .eq("is_active", true)
+        .limit(1);
+      muni = (sched as any)?.[0]?.collection_schedules?.municipality ?? null;
+    }
+
+    const q = supabase.from("bins").select("id,name,lat,lng,fill_level,battery_level,municipality,barangay");
+    const { data } = muni ? await q.eq("municipality", muni) : await q;
     if (data) setDbBins((data as BinRow[]).map(b => ({
       id: b.id, name: b.name, lat: b.lat, lng: b.lng,
       fillLevel: b.fill_level, batteryLevel: b.battery_level,

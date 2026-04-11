@@ -1,331 +1,385 @@
 "use client";
+// components/admin/CollectionsView.tsx
+// Jurisdiction-scoped collections — only records from drivers assigned to
+// schedules in the admin's barangay/municipality.
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import {
-  Search,
-  ChevronDown,
-  Download,
-  Truck,
-  Trophy,
-  X,
-  BarChart3,
-  History,
-  ArrowRight,
+  Search, ChevronDown, Download, Truck, CheckCircle2,
+  X, BarChart3, Clock, Scale, MapPin, Building2,
+  Calendar, ArrowUpDown, TrendingUp, RefreshCcw, Hash,
 } from "lucide-react";
 
 const supabase = createClient();
 
+interface JurisdictionScope { municipality: string | null; barangay: string | null; }
+
 interface CollectionRecord {
+  id: string;
+  created_at: string;
   barangay: string;
   weight: number;
   type: string;
-  created_at: string;
+  status: string;
+  driver_name: string | null;
+  bin_name: string | null;
+  device_id: string | null;
 }
 
 interface BarangaySummary {
-  name: string;
-  weight: number;
-  status: "High" | "Normal" | "Low";
+  name:           string;
+  weight:         number;
+  count:          number;
   lastCollection: string;
-  count: number;
+  status:         "High" | "Normal" | "Low";
+  drivers:        Set<string>;
 }
 
+async function loadScope(): Promise<JurisdictionScope> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { municipality: null, barangay: null };
+  const { data } = await supabase
+    .from("lgu_details").select("municipality,barangay")
+    .eq("id", user.id).limit(1);
+  return { municipality: data?.[0]?.municipality ?? null, barangay: data?.[0]?.barangay ?? null };
+}
+
+const STATUS_COLOR = (s: "High" | "Normal" | "Low") =>
+  s === "High" ? "bg-red-500" : s === "Normal" ? "bg-emerald-500" : "bg-amber-400";
+
 export default function CollectionsView() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("weight-high");
-  const [selectedBrgy, setSelectedBrgy] = useState<BarangaySummary | null>(
-    null,
-  );
-  const [barangays, setBarangays] = useState<BarangaySummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [scope, setScope]               = useState<JurisdictionScope>({ municipality: null, barangay: null });
+  const [records, setRecords]           = useState<CollectionRecord[]>([]);
+  const [barangays, setBarangays]       = useState<BarangaySummary[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState("");
+  const [sortBy, setSortBy]             = useState("weight-high");
+  const [selectedBrgy, setSelectedBrgy] = useState<BarangaySummary | null>(null);
+  const [viewMode, setViewMode]         = useState<"summary" | "records">("summary");
+  const [sortRecords, setSortRecords]   = useState<"desc" | "asc">("desc");
 
-  const fetchCollections = useCallback(async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("collections")
-        .select("barangay, weight, type, created_at");
+  const fetchCollections = useCallback(async (sc: JurisdictionScope) => {
+    setLoading(true);
 
-      if (error) throw error;
-
-      const rawData: CollectionRecord[] = data || [];
-
-      // --- GROUP DATA BY BARANGAY ---
-      const grouped = rawData.reduce((acc: Record<string, any>, curr) => {
-        if (!acc[curr.barangay]) {
-          acc[curr.barangay] = {
-            name: curr.barangay,
-            weight: 0,
-            count: 0,
-            latest: curr.created_at,
-          };
-        }
-        acc[curr.barangay].weight += Number(curr.weight);
-        acc[curr.barangay].count += 1;
-        if (new Date(curr.created_at) > new Date(acc[curr.barangay].latest)) {
-          acc[curr.barangay].latest = curr.created_at;
-        }
-        return acc;
-      }, {});
-
-      const formatted: BarangaySummary[] = Object.values(grouped).map(
-        (b: any) => ({
-          name: b.name,
-          weight: b.weight,
-          count: b.count,
-          lastCollection: new Date(b.latest).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-          status: b.weight > 1000 ? "High" : b.weight > 400 ? "Normal" : "Low",
-        }),
-      );
-
-      setBarangays(formatted);
-    } catch (err) {
-      console.error("Fetch Error:", err);
-    } finally {
-      setLoading(false);
+    // Get driver IDs scoped to this jurisdiction via schedule_assignments
+    let scopedDriverIds: string[] | null = null;
+    if (sc.barangay) {
+      const { data: sched } = await supabase
+        .from("schedule_assignments")
+        .select("driver_id,collection_schedules!inner(barangay,municipality)")
+        .eq("collection_schedules.barangay", sc.barangay)
+        .eq("is_active", true);
+      if (sched && sched.length > 0) {
+        scopedDriverIds = [...new Set<string>(sched.map((s: any) => s.driver_id as string))];
+      }
     }
-  }, []);
+
+    let q = supabase
+      .from("collections")
+      .select(`id,created_at,barangay,weight,type,status,driver_id,bin_id,device_id,
+               profiles:driver_id(full_name),
+               bins:bin_id(name)`)
+      .order("created_at", { ascending: sortRecords === "asc" });
+
+    if (sc.barangay) q = q.eq("barangay", sc.barangay);
+    if (scopedDriverIds && scopedDriverIds.length > 0) {
+      q = q.in("driver_id", scopedDriverIds);
+    }
+
+    const { data } = await q;
+    const raw: CollectionRecord[] = (data ?? []).map((r: any) => ({
+      id:           r.id,
+      created_at:   r.created_at,
+      barangay:     r.barangay,
+      weight:       Number(r.weight ?? 0),
+      type:         r.type,
+      status:       r.status ?? "VERIFIED",
+      driver_name:  r.profiles?.full_name ?? null,
+      bin_name:     r.bins?.name ?? null,
+      device_id:    r.device_id ?? null,
+    }));
+
+    setRecords(raw);
+
+    // Aggregate by barangay
+    const grouped: Record<string, BarangaySummary> = {};
+    raw.forEach(r => {
+      if (!grouped[r.barangay]) grouped[r.barangay] = { name:r.barangay, weight:0, count:0, lastCollection:r.created_at, status:"Low", drivers:new Set() };
+      grouped[r.barangay].weight += r.weight;
+      grouped[r.barangay].count++;
+      if (r.created_at > grouped[r.barangay].lastCollection) grouped[r.barangay].lastCollection = r.created_at;
+      if (r.driver_name) grouped[r.barangay].drivers.add(r.driver_name);
+    });
+    const summaries = Object.values(grouped).map(b => ({
+      ...b,
+      status: (b.weight > 1000 ? "High" : b.weight > 400 ? "Normal" : "Low") as "High" | "Normal" | "Low",
+    }));
+    setBarangays(summaries);
+    setLoading(false);
+  }, [sortRecords]);
 
   useEffect(() => {
-    fetchCollections();
+    loadScope().then(sc => { setScope(sc); fetchCollections(sc); });
   }, [fetchCollections]);
 
-  const statusRank: Record<string, number> = { High: 3, Normal: 2, Low: 1 };
+  const totalWeight = records.reduce((s, r) => s + r.weight, 0);
+  const totalTrips  = records.length;
+  const uniqueDrivers = new Set(records.map(r => r.driver_name).filter(Boolean)).size;
+  const thisMonth = records.filter(r =>
+    new Date(r.created_at).getMonth() === new Date().getMonth()).length;
 
-  const filteredBarangays = barangays
-    .filter((brgy) =>
-      brgy.name.toLowerCase().includes(searchTerm.toLowerCase()),
-    )
+  const sortedBarangays = [...barangays]
+    .filter(b => b.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      switch (sortBy) {
-        case "name-asc":
-          return a.name.localeCompare(b.name);
-        case "weight-high":
-          return b.weight - a.weight;
-        case "weight-low":
-          return a.weight - b.weight;
-        case "status-high":
-          return statusRank[b.status] - statusRank[a.status];
-        default:
-          return 0;
-      }
+      if (sortBy === "weight-high") return b.weight - a.weight;
+      if (sortBy === "weight-low")  return a.weight - b.weight;
+      if (sortBy === "name")        return a.name.localeCompare(b.name);
+      if (sortBy === "count")       return b.count - a.count;
+      return 0;
     });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "High":
-        return "bg-red-500";
-      case "Normal":
-        return "bg-emerald-500";
-      default:
-        return "bg-amber-500";
-    }
-  };
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-PH", { month:"short", day:"numeric", year:"numeric" });
+  const fmtTime = (d: string) => new Date(d).toLocaleTimeString("en-PH", { hour:"2-digit", minute:"2-digit", hour12:true });
 
-  if (loading)
-    return (
-      <div className="h-96 flex items-center justify-center animate-pulse text-emerald-600 font-black italic uppercase tracking-[0.2em] text-[10px]">
-        Syncing Fleet Intelligence...
-      </div>
-    );
+  const filteredRecords = records.filter(r => {
+    const q = search.toLowerCase();
+    return (r.driver_name ?? "").toLowerCase().includes(q)
+      || r.barangay.toLowerCase().includes(q)
+      || r.type.toLowerCase().includes(q)
+      || (r.bin_name ?? "").toLowerCase().includes(q);
+  }).sort((a,b) => sortRecords === "desc"
+    ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    : new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-700">
-      {/* --- DETACHED NAV BAR (FLEET NAVIGATION STYLE) --- */}
-      <div className="flex flex-row gap-3 items-stretch w-full">
-        {/* SEARCH BLOCK - Full height maintained on mobile */}
-        <div className="relative flex-1 group min-w-0 rounded-2xl shadow-sm">
-          <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-all duration-300">
-            <Search size={18} strokeWidth={2.5} />
+    <div className="space-y-6">
+      {/* ── JURISDICTION BADGE ── */}
+      {(scope.municipality || scope.barangay) && (
+        <div className="flex items-center gap-3 px-1">
+          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full">
+            <Building2 size={12} className="text-emerald-600" />
+            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+              {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
+            </span>
           </div>
-          <input
-            type="text"
-            placeholder="SEARCH SECTOR NODES..."
-            className="w-full h-full pl-14 pr-6 bg-white border border-slate-200 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] outline-none focus:border-emerald-500 focus:ring-4 ring-emerald-500/5 transition-all shadow-sm placeholder:text-slate-300"
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <button onClick={() => fetchCollections(scope)}
+            className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors">
+            <RefreshCcw size={11} /> Refresh
+          </button>
         </div>
+      )}
 
-        {/* SORT BLOCK - Matching the tactile button style */}
-        <div className="relative min-w-[260px] h-14 md:h-16 lg:h-14 group">
-          <select
-            className="w-full h-full appearance-none px-8 bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl outline-none cursor-pointer hover:bg-slate-800 transition-all duration-300 border-b-4 border-slate-700 active:border-b-0 active:translate-y-[2px] shadow-sm"
-            onChange={(e) => setSortBy(e.target.value)}
-            value={sortBy}
-          >
-            <option value="weight-high text-slate-900">
-              SORT: HIGHEST VOLUME
-            </option>
-            <option value="weight-low">SORT: LOWEST VOLUME</option>
-            <option value="status-high">SORT: CRITICAL STATUS</option>
-            <option value="name-asc">SORT: ALPHABETICAL</option>
-          </select>
-
-          {/* CUSTOM ICON CONTAINER */}
-          <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-            <ChevronDown
-              className="text-emerald-400 group-hover:translate-y-0.5 transition-transform duration-300"
-              size={18}
-              strokeWidth={3}
-            />
-          </div>
-
-          {/* DECORATIVE LEFT ACCENT */}
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[1px] h-6 bg-white/10" />
-        </div>
-      </div>
-
-      {/* --- GRID --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredBarangays.map((brgy) => (
-          <div
-            key={brgy.name}
-            onClick={() => setSelectedBrgy(brgy)}
-            className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden transition-all hover:border-emerald-300 active:scale-[0.98] cursor-pointer group"
-          >
-            <div className={`h-1.5 w-full ${getStatusColor(brgy.status)}`} />
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <span
-                  className={`text-[8px] font-black px-2 py-1 rounded border uppercase tracking-widest ${
-                    brgy.status === "High"
-                      ? "border-red-100 text-red-600 bg-red-50"
-                      : "border-emerald-100 text-emerald-600 bg-emerald-50"
-                  }`}
-                >
-                  {brgy.status} Priority
-                </span>
-                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
-                  {brgy.count} LOGS
-                </span>
-              </div>
-
-              <h3 className="font-black text-slate-900 text-xl tracking-tighter italic uppercase mb-1">
-                {brgy.name}
-              </h3>
-
-              <div className="flex items-baseline gap-1 mb-5">
-                <span className="text-3xl font-black text-slate-900 tracking-tighter">
-                  {brgy.weight.toLocaleString()}
-                </span>
-                <span className="text-[9px] font-black text-slate-400 uppercase">
-                  KG
-                </span>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-50 h-2 rounded-full overflow-hidden mb-5">
-                <div
-                  className={`${getStatusColor(brgy.status)} h-full transition-all duration-1000`}
-                  style={{
-                    width: `${Math.min((brgy.weight / 2000) * 100, 100)}%`,
-                  }}
-                />
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-slate-50">
-                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  SYNCED: {brgy.lastCollection}
-                </p>
-                <ArrowRight
-                  size={16}
-                  className="text-slate-300 group-hover:text-emerald-500 transition-colors"
-                />
-              </div>
+      {/* ── STATS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Weight",    value: `${totalWeight.toLocaleString()} kg`, icon: <Scale size={16} />,       color: "emerald" },
+          { label: "Total Trips",     value: totalTrips,                           icon: <Truck size={16} />,       color: "blue" },
+          { label: "Active Drivers",  value: uniqueDrivers,                        icon: <TrendingUp size={16} />,  color: "amber" },
+          { label: "This Month",      value: thisMonth,                            icon: <Calendar size={16} />,    color: "slate" },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3
+              ${s.color === "emerald" ? "bg-emerald-50 text-emerald-600" :
+                s.color === "blue"    ? "bg-blue-50 text-blue-600" :
+                s.color === "amber"   ? "bg-amber-50 text-amber-600" :
+                                        "bg-slate-50 text-slate-600"}`}>
+              {s.icon}
             </div>
+            <p className="text-2xl font-black text-slate-900">{s.value}</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{s.label}</p>
           </div>
         ))}
       </div>
 
-      {/* --- DETAIL MODAL (MATCHING NEW STYLE) --- */}
-      {selectedBrgy && (
-        <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-6">
-          <div
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
-            onClick={() => setSelectedBrgy(null)}
-          />
-          <div className="relative w-full max-w-lg bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6">
-            <div
-              className={`h-1.5 w-full ${getStatusColor(selectedBrgy.status)}`}
-            />
-            <div className="p-8 md:p-10">
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">
-                    Sector: {selectedBrgy.name}
-                  </h2>
-                  <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">
-                    Operational Intelligence Report
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedBrgy(null)}
-                  className="p-2 text-slate-400 hover:text-slate-900 transition-colors"
-                >
-                  <X size={24} />
-                </button>
-              </div>
+      {/* ── FILTERS ── */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search barangay, driver, bin, or type…"
+            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-400 focus:ring-2 ring-emerald-400/10 transition-all placeholder:text-slate-300 uppercase tracking-wide" />
+        </div>
+        <div className="flex bg-white border border-slate-200 p-1 rounded-xl gap-1 h-12">
+          <button onClick={() => setViewMode("summary")}
+            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "summary" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>
+            Summary
+          </button>
+          <button onClick={() => setViewMode("records")}
+            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "records" ? "bg-slate-900 text-white" : "text-slate-400"}`}>
+            Records
+          </button>
+        </div>
+        {viewMode === "summary" ? (
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+            className="h-12 px-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl border-none outline-none cursor-pointer min-w-[180px]">
+            <option value="weight-high">Sort: Highest Weight</option>
+            <option value="weight-low">Sort: Lowest Weight</option>
+            <option value="count">Sort: Most Trips</option>
+            <option value="name">Sort: Alphabetical</option>
+          </select>
+        ) : (
+          <button onClick={() => setSortRecords(o => o === "desc" ? "asc" : "desc")}
+            className="h-12 px-4 bg-white border border-slate-200 rounded-xl flex items-center gap-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-all">
+            <ArrowUpDown size={13} className="text-emerald-500" />
+            {sortRecords === "desc" ? "Newest First" : "Oldest First"}
+          </button>
+        )}
+      </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="p-5 bg-slate-50 border border-slate-100 rounded-xl">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                    Cumulative Net
-                  </p>
-                  <p className="text-2xl font-black text-slate-900 tracking-tighter">
-                    {selectedBrgy.weight}kg
-                  </p>
-                </div>
-                <div className="p-5 bg-slate-50 border border-slate-100 rounded-xl">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                    Total Logs
-                  </p>
-                  <p className="text-2xl font-black text-slate-900 tracking-tighter">
-                    {selectedBrgy.count}
-                  </p>
+      {/* ── SUMMARY VIEW ── */}
+      {viewMode === "summary" && (
+        loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1,2,3].map(i => <div key={i} className="h-44 bg-slate-50 rounded-2xl animate-pulse border border-slate-100" />)}
+          </div>
+        ) : sortedBarangays.length === 0 ? (
+          <div className="py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100">
+            <Truck size={36} className="mx-auto text-slate-200 mb-3" />
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No collection data found</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sortedBarangays.map(b => (
+              <div key={b.name} onClick={() => setSelectedBrgy(b)}
+                className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer overflow-hidden">
+                <div className={`h-1.5 w-full ${STATUS_COLOR(b.status)}`} />
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-4">
+                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase
+                      ${b.status === "High"   ? "bg-red-50 text-red-700 border-red-200" :
+                        b.status === "Normal" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                                "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                      {b.status} Volume
+                    </span>
+                    <span className="text-[9px] text-slate-300 font-bold">{b.count} logs</span>
+                  </div>
+                  <h3 className="font-black text-slate-900 text-lg group-hover:text-emerald-700 transition-colors italic uppercase">{b.name}</h3>
+                  <div className="flex items-baseline gap-1 mt-1 mb-4">
+                    <span className="text-3xl font-black text-slate-900">{b.weight.toLocaleString()}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase">kg</span>
+                  </div>
+                  <div className="w-full bg-slate-50 h-2 rounded-full overflow-hidden mb-4">
+                    <div className={`${STATUS_COLOR(b.status)} h-full transition-all duration-700`}
+                      style={{ width: `${Math.min((b.weight / 2000) * 100, 100)}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase">
+                    <div className="flex items-center gap-1"><MapPin size={9} className="text-emerald-500" />{b.drivers.size} driver{b.drivers.size !== 1 ? "s":""}</div>
+                    <div className="flex items-center gap-1"><Calendar size={9} />{fmtDate(b.lastCollection)}</div>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+        )
+      )}
 
-              <div className="p-6 bg-slate-900 rounded-xl text-white relative overflow-hidden mb-8 group">
-                <Trophy
-                  className="absolute right-[-10px] bottom-[-10px] opacity-10 group-hover:rotate-12 transition-transform duration-700"
-                  size={100}
-                />
-                <div className="relative z-10">
-                  <p className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mb-1">
-                    Sector Benchmark
-                  </p>
-                  <p className="text-xl font-black uppercase italic tracking-tighter">
-                    Optimal Collection Tier
-                  </p>
-                </div>
-              </div>
-
-              {/* ACTION TRAY (Side-by-Side Grid for Mobile Fix) */}
-              <div className="grid grid-cols-2 gap-3">
-                <button className="h-14 bg-white border border-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95 flex items-center justify-center gap-2">
-                  <Download size={14} /> Report
-                </button>
-                <button className="h-14 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all active:scale-95">
-                  Generate Insights
-                </button>
-              </div>
-            </div>
+      {/* ── RECORDS VIEW ── */}
+      {viewMode === "records" && (
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  {["Date & Time", "Driver", "Bin / Station", "Barangay", "Type", "Weight", "Status"].map(h => (
+                    <th key={h} className="px-5 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest">
+                      No records found
+                    </td>
+                  </tr>
+                ) : filteredRecords.map((r, idx) => (
+                  <tr key={r.id} className={`border-b border-slate-50 hover:bg-emerald-50/30 transition-colors ${idx % 2 === 0 ? "" : "bg-slate-50/30"}`}>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{fmtDate(r.created_at)}</p>
+                      <p className="text-[9px] text-slate-400">{fmtTime(r.created_at)}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{r.driver_name ?? "Unknown"}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{r.bin_name ?? r.device_id ?? "N/A"}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg uppercase">{r.barangay}</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase">{r.type}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-black text-slate-900">{r.weight.toFixed(1)} kg</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg border uppercase
+                        ${r.status === "VERIFIED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* Empty State */}
-      {filteredBarangays.length === 0 && (
-        <div className="text-center py-24 bg-white rounded-2xl border-2 border-dashed border-slate-100">
-          <Truck className="mx-auto mb-4 text-slate-200" size={40} />
-          <p className="text-slate-400 font-black uppercase tracking-widest text-[9px]">
-            No data nodes detected in this sector
-          </p>
+      {/* ── BARANGAY DETAIL MODAL ── */}
+      {selectedBrgy && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+          <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={() => setSelectedBrgy(null)} />
+          <div className="relative w-full max-w-lg bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className={`h-1.5 w-full ${STATUS_COLOR(selectedBrgy.status)}`} />
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 italic uppercase">{selectedBrgy.name}</h2>
+                  <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Collection Intelligence</p>
+                </div>
+                <button onClick={() => setSelectedBrgy(null)} className="text-slate-400 hover:text-slate-800 p-1">✕</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[
+                  { label:"Total Weight",  value:`${selectedBrgy.weight.toLocaleString()} kg`, icon:<Scale size={14}/> },
+                  { label:"Total Trips",   value:selectedBrgy.count,                           icon:<Truck size={14}/> },
+                  { label:"Active Drivers",value:selectedBrgy.drivers.size,                    icon:<TrendingUp size={14}/> },
+                  { label:"Last Collection",value:fmtDate(selectedBrgy.lastCollection),        icon:<Clock size={14}/> },
+                ].map(s => (
+                  <div key={s.label} className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2 text-slate-400">{s.icon}<span className="text-[8px] font-black uppercase tracking-widest">{s.label}</span></div>
+                    <p className="text-lg font-black text-slate-900">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {selectedBrgy.drivers.size > 0 && (
+                <div className="bg-slate-50 rounded-xl p-4 mb-5">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Assigned Drivers</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[...selectedBrgy.drivers].map(name => (
+                      <span key={name} className="text-[10px] font-bold px-3 py-1 bg-white border border-slate-200 rounded-lg text-slate-700">{name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setSelectedBrgy(null)}
+                  className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+                  Close
+                </button>
+                <button onClick={() => { setSearch(selectedBrgy.name); setViewMode("records"); setSelectedBrgy(null); }}
+                  className="py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200">
+                  View Records
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

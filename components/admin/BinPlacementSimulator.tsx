@@ -120,6 +120,8 @@ interface ExistingBin {
   lng:           number;
   fill_level:    number;
   battery_level: number;
+  municipality:  string | null;
+  barangay:      string | null;
 }
 
 interface PendingBin {
@@ -622,9 +624,13 @@ export default function BinPlacementSimulator() {
 
       // Load existing bins — all bins, then scope client-side by proximity (15 km radius)
       // Bins table has no municipality column so we use spatial proximity.
-      const { data: bins } = await supabase
+      // Fetch bins scoped to admin's municipality (column-based, not proximity)
+      const binQuery = supabase
         .from("bins")
-        .select("id,device_id,name,lat,lng,fill_level,battery_level");
+        .select("id,device_id,name,lat,lng,fill_level,battery_level,municipality,barangay");
+      const { data: bins } = ap.municipality
+        ? await binQuery.eq("municipality", ap.municipality)
+        : await binQuery;
 
       const allBins: ExistingBin[] = bins ?? [];
       // Scope: if admin has an area center, show bins within 15 km; else show all
@@ -786,14 +792,16 @@ export default function BinPlacementSimulator() {
     const timestamp = Date.now();
     const muni = adminProfile?.municipality?.toUpperCase().replace(/\s/g, "") ?? "BIN";
 
-    // 1. Insert bins
+    // 1. Insert bins — include municipality + barangay for jurisdiction scoping
     const binInserts = pendingBins.map((b, i) => ({
-      device_id:     `SIM-${muni}-${timestamp}-${i}`,
-      name:          b.name || `Bin ${i + 1} (${BIN_TYPES.find(t => t.value === b.bin_type)?.label ?? b.bin_type})`,
-      lat:           b.lat,
-      lng:           b.lng,
-      fill_level:    b.fill_level,
-      battery_level: 100,
+      device_id:    `SIM-${muni}-${timestamp}-${i}`,
+      name:         b.name || `Bin ${i + 1} (${BIN_TYPES.find(t => t.value === b.bin_type)?.label ?? b.bin_type})`,
+      lat:          b.lat,
+      lng:          b.lng,
+      fill_level:   b.fill_level,
+      battery_level:100,
+      municipality: adminProfile?.municipality ?? null,
+      barangay:     adminProfile?.barangay     ?? null,
     }));
 
     const { data: savedBins, error: binErr } = await supabase.from("bins").insert(binInserts).select("id");
@@ -841,14 +849,12 @@ export default function BinPlacementSimulator() {
       },
     });
 
-    // 4. Reload existing bins (scoped)
-    const { data: freshBins } = await supabase.from("bins").select("id,device_id,name,lat,lng,fill_level,battery_level");
-    const allFresh: ExistingBin[] = freshBins ?? [];
-    const { areaLat, areaLng } = adminProfile ?? {};
-    const scoped = (areaLat && areaLng)
-      ? allFresh.filter(b => haversine([areaLat, areaLng], [b.lat, b.lng]) <= 15_000)
-      : allFresh;
-    setExistingBins(scoped);
+    // 4. Reload existing bins scoped by municipality column
+    const reloadQ = supabase.from("bins").select("id,device_id,name,lat,lng,fill_level,battery_level,municipality,barangay");
+    const { data: freshBins } = adminProfile?.municipality
+      ? await reloadQ.eq("municipality", adminProfile.municipality)
+      : await reloadQ;
+    setExistingBins(freshBins ?? []);
 
     setPendingBins([]); setSimRoute(null); setStartPos(null); setExitPos(null);
     setSaveOk(true); setTimeout(() => setSaveOk(false), 4500);

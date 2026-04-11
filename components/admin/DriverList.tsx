@@ -1,359 +1,425 @@
 "use client";
+// components/admin/DriverList.tsx
+// Jurisdiction-scoped driver list — only drivers whose lgu_details or
+// profiles municipality/barangay matches the admin's scope.
+// Note: drivers don't have lgu_details; scope is derived from their
+// assigned_route / barangay cross-referenced via collections or passed
+// as a metadata filter. For now we scope via the admin's municipality
+// by filtering collections barangay matches.
+// Production approach: filter profiles where driver_details.assigned_route
+// contains the admin's barangay, OR where the driver was created/assigned
+// by an admin of the same municipality. We use a join via schedule_assignments.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Toaster, toast } from "react-hot-toast";
 import {
-  Search,
-  Plus,
-  Truck,
-  MapPin,
-  TrendingUp,
-  UserX,
-  ArrowRight,
-  Loader2,
+  Search, Plus, Truck, MapPin, TrendingUp, UserX, RefreshCcw,
+  CheckCircle2, AlertTriangle, Clock, Battery, Wifi,
+  ShieldCheck, RotateCcw, Eye, Building2, Phone, Mail,
+  Star, Activity, Hash, Calendar,
 } from "lucide-react";
-import {
-  createDriverAccount,
-  archiveDriverAccount,
-  restoreDriverAccount,
-} from "@/app/admin/drivers/actions";
 
-// Sub-components
-import DriverSheet from "@/app/admin/drivers/components/DriverSheet";
 import AddDriverModal from "@/app/admin/drivers/components/AddDriverModal";
 
+const supabase = createClient();
+
+interface JurisdictionScope { municipality: string | null; barangay: string | null; }
+
+interface Driver {
+  id: string;
+  full_name: string;
+  email: string | null;
+  contact_number: string | null;
+  avatar_url: string | null;
+  license_number: string | null;
+  vehicle_plate_number: string | null;
+  vehicle_type: string | null;
+  assigned_route: string | null;
+  employment_status: string;
+  duty_status: string;
+  collections_count: number;
+  last_collection: string | null;
+  schedules_count: number;
+}
+
+async function loadScope(): Promise<JurisdictionScope> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { municipality: null, barangay: null };
+  const { data } = await supabase
+    .from("lgu_details").select("municipality,barangay")
+    .eq("id", user.id).limit(1);
+  return { municipality: data?.[0]?.municipality ?? null, barangay: data?.[0]?.barangay ?? null };
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  "ON-DUTY":  "bg-emerald-500",
+  "OFF-DUTY": "bg-slate-300",
+};
+
+const EMPLOY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  "ACTIVE":   { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-100" },
+  "INACTIVE": { bg: "bg-slate-50",   text: "text-slate-500",   border: "border-slate-100"   },
+  "REMOVED":  { bg: "bg-red-50",     text: "text-red-600",     border: "border-red-100"     },
+};
+
 export default function DriversList() {
-  const supabase = createClient();
-  const [drivers, setDrivers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ACTIVE" | "REMOVED">("ACTIVE");
+  const [scope, setScope]         = useState<JurisdictionScope>({ municipality: null, barangay: null });
+  const [drivers, setDrivers]     = useState<Driver[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState("");
+  const [tab, setTab]             = useState<"ACTIVE" | "INACTIVE" | "REMOVED">("ACTIVE");
+  const [selected, setSelected]   = useState<Driver | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [saveOk, setSaveOk]       = useState(false);
+  const [saveMsg, setSaveMsg]     = useState("");
+  const [showAdd,  setShowAdd]     = useState(false);
 
-  // Fetch all drivers once on mount (Functions unchanged)
-  useEffect(() => {
-    fetchDrivers();
-  }, []);
-
-  async function fetchDrivers() {
+  const fetchDrivers = useCallback(async (sc: JurisdictionScope) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(
-        `
-        id, 
-        email,
-        full_name, 
-        role,
-        driver_details (
-          license_number, 
-          vehicle_plate_number, 
-          employment_status,
-          assigned_route,
-          duty_status
-        )
-      `,
-      )
-      .eq("role", "DRIVER");
 
-    if (error) {
-      toast.error("Failed to load drivers");
+    // ── PRIMARY SCOPE: lgu_details.municipality ───────────────────────────────
+    // AddDriverModal writes the driver's municipality + barangay into lgu_details
+    // at creation time. This is the authoritative jurisdiction tag — no fallbacks
+    // to schedule_assignments that could leak cross-municipality drivers.
+    if (!sc.municipality) {
+      // Admin has no jurisdiction set — show nothing rather than everything
+      setDrivers([]);
       setLoading(false);
       return;
     }
 
-    if (data) {
-      const flattened = data.map((d: any) => {
-        const details = d.driver_details;
-        return {
-          id: d.id,
-          email: d.email || "No Email",
-          full_name: d.full_name,
-          license_number: details?.license_number || "N/A",
-          truck_plate: details?.vehicle_plate_number || "N/A",
-          status: details?.employment_status || "ACTIVE",
-          duty_status: details?.duty_status || "OFF-DUTY",
-          assigned_route: details?.assigned_route || "Unassigned",
-          efficiency_score: 100, // Placeholder as per original
-        };
-      });
-      setDrivers(flattened);
-    }
-    setLoading(false);
-  }
+    // 1. Get all driver IDs in this municipality from lgu_details
+    const { data: lguRows } = await supabase
+      .from("lgu_details")
+      .select("id")
+      .eq("municipality", sc.municipality)
+      .eq("position_title", "Driver");
 
-  const handleRemoveDriver = async (id: string) => {
-    setLoading(true);
-    const result = await archiveDriverAccount(id);
-    if (result.success) {
-      toast.success("Driver moved to archives");
-      setSelectedDriver(null);
-      await fetchDrivers();
-    } else {
-      toast.error(result.error);
-    }
-    setLoading(false);
-  };
+    const scopedIds = new Set<string>((lguRows ?? []).map((r: any) => r.id));
 
-  const handleRestoreDriver = async (id: string) => {
-    setLoading(true);
-    const result = await restoreDriverAccount(id);
-    if (result.success) {
-      toast.success("Driver restored to active fleet");
-      setSelectedDriver(null);
-      await fetchDrivers();
-    } else {
-      toast.error(result.error || "Restoration failed");
+    if (scopedIds.size === 0) {
+      setDrivers([]);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-  };
 
-  const handleAddDriver = async (driverData: any) => {
-    setLoading(true);
-    const result = await createDriverAccount(driverData);
-    if (result?.success) {
-      toast.success("Driver Account Activated", {
-        style: {
-          background: "#065f46",
-          color: "#ecfdf5",
-          borderRadius: "24px",
-          fontWeight: "900",
-          fontSize: "11px",
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-        },
-      });
-      setShowAddModal(false);
-      await fetchDrivers();
-    } else {
-      toast.error(result?.error || "Creation failed");
-    }
-    setLoading(false);
-  };
+    // 2. Fetch profiles + driver_details for only those IDs
+    const { data: allDrivers } = await supabase
+      .from("profiles")
+      .select(`id,full_name,email,contact_number,avatar_url,
+               driver_details!inner(license_number,vehicle_plate_number,vehicle_type,assigned_route,employment_status,duty_status)`)
+      .eq("role", "DRIVER")
+      .in("id", [...scopedIds]);
 
-  const filteredDrivers = drivers.filter((d) => {
-    const matchesTab = d.status === activeTab;
-    const matchesSearch =
-      (d.full_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (d.truck_plate || "").toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesTab && matchesSearch;
+    if (!allDrivers) { setLoading(false); return; }
+
+    const ids = allDrivers.map((d: any) => d.id);
+    const scopedDrivers = allDrivers;
+
+    // Fetch collection stats
+    const { data: collections } = ids.length > 0
+      ? await supabase.from("collections").select("driver_id,created_at").in("driver_id", ids)
+      : { data: [] };
+    const collMap: Record<string, { count: number; last: string | null }> = {};
+    (collections ?? []).forEach((c: any) => {
+      if (!collMap[c.driver_id]) collMap[c.driver_id] = { count: 0, last: null };
+      collMap[c.driver_id].count++;
+      if (!collMap[c.driver_id].last || c.created_at > collMap[c.driver_id].last!)
+        collMap[c.driver_id].last = c.created_at;
+    });
+
+    // Fetch schedule counts
+    const { data: schedAssign } = ids.length > 0
+      ? await supabase.from("schedule_assignments").select("driver_id").in("driver_id", ids).eq("is_active", true)
+      : { data: [] };
+    const schedMap: Record<string, number> = {};
+    (schedAssign ?? []).forEach((s: any) => { schedMap[s.driver_id] = (schedMap[s.driver_id] ?? 0) + 1; });
+
+    setDrivers(scopedDrivers.map((d: any) => {
+      const det = d.driver_details;
+      return {
+        id: d.id, full_name: d.full_name ?? "Unknown Driver",
+        email: d.email, contact_number: d.contact_number, avatar_url: d.avatar_url,
+        license_number:       det?.license_number ?? null,
+        vehicle_plate_number: det?.vehicle_plate_number ?? null,
+        vehicle_type:         det?.vehicle_type ?? null,
+        assigned_route:       det?.assigned_route ?? null,
+        employment_status:    det?.employment_status ?? "ACTIVE",
+        duty_status:          det?.duty_status ?? "OFF-DUTY",
+        collections_count:    collMap[d.id]?.count ?? 0,
+        last_collection:      collMap[d.id]?.last ?? null,
+        schedules_count:      schedMap[d.id] ?? 0,
+      };
+    }));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadScope().then(sc => { setScope(sc); fetchDrivers(sc); });
+  }, [fetchDrivers]);
+
+  const filtered = drivers.filter(d => {
+    const q = search.toLowerCase();
+    const matchQ = d.full_name.toLowerCase().includes(q)
+      || (d.vehicle_plate_number ?? "").toLowerCase().includes(q)
+      || (d.license_number ?? "").toLowerCase().includes(q);
+    const matchTab = d.employment_status === tab;
+    return matchQ && matchTab;
   });
 
-  return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <Toaster position="top-center" />
+  const stats = {
+    total:   drivers.filter(d => d.employment_status === "ACTIVE").length,
+    onDuty:  drivers.filter(d => d.duty_status === "ON-DUTY").length,
+    inactive:drivers.filter(d => d.employment_status === "INACTIVE").length,
+    collections: drivers.reduce((s, d) => s + d.collections_count, 0),
+  };
 
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.2em]">
-              Fleet Control
-            </p>
+  const toggleEmployment = async (driver: Driver, newStatus: string) => {
+    setProcessing(true);
+    const { error } = await supabase.from("driver_details")
+      .update({ employment_status: newStatus }).eq("id", driver.id);
+    if (!error) {
+      setDrivers(p => p.map(d => d.id === driver.id ? { ...d, employment_status: newStatus } : d));
+      setSelected(s => s && s.id === driver.id ? { ...s, employment_status: newStatus } : s);
+      setSaveMsg(`${driver.full_name} → ${newStatus}`); setSaveOk(true);
+      setTimeout(() => setSaveOk(false), 3000);
+    }
+    setProcessing(false);
+  };
+
+  const initials = (n: string) => n.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+  const fmtDate = (d: string | null) => d
+    ? new Date(d).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+    : "Never";
+
+  const ec = (s: string) => EMPLOY_COLORS[s] ?? EMPLOY_COLORS["ACTIVE"];
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── ADD DRIVER BUTTON ── */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        {(scope.municipality || scope.barangay) && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full">
+              <Building2 size={12} className="text-emerald-600" />
+              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+                {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{filtered.length} operators</span>
           </div>
-        </div>
+        )}
         <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 hover:shadow-xl hover:shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-        >
-          <Plus size={16} strokeWidth={3} />
-          Add New Operator
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-sm shadow-emerald-200 ml-auto">
+          <Plus size={14} />
+          Add New Driver
         </button>
       </div>
 
-      {/* --- DETACHED FLEET NAVIGATION & SEARCH --- */}
-      <div className="flex flex-col xl:flex-row gap-4 items-stretch">
-        {/* SEARCH BLOCK - Now independently responsive */}
-        <div className="relative flex-1 group min-w-0 rounded-2xl shadow-sm ">
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-all duration-300">
-            <Search size={18} strokeWidth={2.5} />
+      {/* ── STATS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Active Drivers", value: stats.total,       icon: <Truck size={16} />,        color: "emerald" },
+          { label: "On Duty Now",    value: stats.onDuty,      icon: <Activity size={16} />,     color: "blue" },
+          { label: "Inactive",       value: stats.inactive,    icon: <AlertTriangle size={16} />, color: "amber" },
+          { label: "Total Trips",    value: stats.collections, icon: <CheckCircle2 size={16} />, color: "slate" },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3
+              ${s.color === "emerald" ? "bg-emerald-50 text-emerald-600" :
+                s.color === "blue"    ? "bg-blue-50 text-blue-600" :
+                s.color === "amber"   ? "bg-amber-50 text-amber-600" :
+                                        "bg-slate-50 text-slate-600"}`}>
+              {s.icon}
+            </div>
+            <p className="text-2xl font-black text-slate-900">{s.value}</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{s.label}</p>
           </div>
-          <input
-            type="text"
-            placeholder="Search fleet database..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full h-14 pl-14 pr-6 bg-white border border-slate-200 rounded-2xl text-[11px] font-bold uppercase tracking-widest outline-none focus:border-emerald-500 focus:ring-4 ring-emerald-500/5 transition-all placeholder:text-slate-400"
-          />
+        ))}
+      </div>
+
+      {/* ── FILTERS ── */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, plate, or license…"
+            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-400 focus:ring-2 ring-emerald-400/10 transition-all placeholder:text-slate-300 uppercase tracking-wide" />
         </div>
-
-        {/* TAB SWITCHER BLOCK - Detached to maintain height and scale */}
-        <div className="flex bg-white border border-slate-200 p-1.5 rounded-2xl shadow-sm shrink-0 items-stretch h-14 md:h-16 lg:h-14">
-          <button
-            onClick={() => setActiveTab("ACTIVE")}
-            className={`flex-1 lg:flex-none px-6 md:px-10 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-3 ${
-              activeTab === "ACTIVE"
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm"
-                : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              {activeTab === "ACTIVE" && (
-                <div className="absolute w-3 h-3 rounded-full bg-emerald-500 opacity-20 animate-ping" />
-              )}
-              <div
-                className={`w-2 h-2 rounded-full ${activeTab === "ACTIVE" ? "bg-emerald-500" : "bg-slate-300"}`}
-              />
-            </div>
-            <span className="whitespace-nowrap">Active Fleet</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("REMOVED")}
-            className={`flex-1 lg:flex-none px-6 md:px-10 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-3 ${
-              activeTab === "REMOVED"
-                ? "bg-red-50 text-red-700 border border-red-100 shadow-sm"
-                : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              {activeTab === "REMOVED" && (
-                <div className="absolute w-3 h-3 rounded-full bg-red-500 opacity-20 animate-ping" />
-              )}
-              <div
-                className={`w-2 h-2 rounded-full ${activeTab === "REMOVED" ? "bg-red-500" : "bg-slate-300"}`}
-              />
-            </div>
-            <span className="whitespace-nowrap">Archives</span>
-          </button>
+        <div className="flex bg-white border border-slate-200 p-1 rounded-xl gap-1 h-12">
+          {(["ACTIVE", "INACTIVE", "REMOVED"] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all
+                ${tab === t
+                  ? t === "ACTIVE"   ? "bg-emerald-600 text-white shadow-sm"
+                  : t === "INACTIVE" ? "bg-amber-500 text-white shadow-sm"
+                                     : "bg-red-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-600"}`}>
+              {t}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* DRIVER GRID */}
-      {loading && drivers.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-48 w-full bg-white rounded-3xl border border-slate-100 animate-pulse p-6 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="h-4 w-1/4 bg-slate-100 rounded-full" />
-                <div className="h-6 w-3/4 bg-slate-100 rounded-full" />
-              </div>
-              <div className="h-12 w-full bg-slate-50 rounded-2xl" />
-            </div>
-          ))}
+      {/* ── GRID ── */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[1,2,3].map(i => <div key={i} className="h-48 bg-slate-50 rounded-2xl animate-pulse border border-slate-100" />)}
         </div>
-      ) : filteredDrivers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredDrivers.map((driver) => (
-            <div
-              key={driver.id}
-              onClick={() => setSelectedDriver(driver)}
-              className="bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col group overflow-hidden transition-all hover:border-emerald-200 hover:shadow-xl hover:shadow-slate-200/50 cursor-pointer relative"
-            >
-              {/* Dynamic Status Accent */}
-              <div
-                className={`h-1.5 w-full ${activeTab === "ACTIVE" ? "bg-emerald-500" : "bg-red-500"}`}
-              />
-
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-5">
-                  <div className="space-y-1.5">
-                    <span
-                      className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-widest border ${
-                        activeTab === "ACTIVE"
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                          : "bg-red-50 text-red-500 border-red-100"
-                      }`}
-                    >
-                      {driver.status}
-                    </span>
-
-                    {activeTab === "ACTIVE" && (
-                      <div className="flex items-center gap-2 ml-1">
-                        <div
-                          className={`h-1.5 w-1.5 rounded-full ${driver.duty_status === "ON-DUTY" ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}
-                        />
-                        <span
-                          className={`text-[8px] font-bold uppercase tracking-wider ${driver.duty_status === "ON-DUTY" ? "text-emerald-700" : "text-slate-400"}`}
-                        >
-                          {driver.duty_status}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="bg-slate-900 text-white px-3 py-1 rounded-lg text-[9px] font-black tracking-widest font-mono">
-                    {driver.truck_plate}
-                  </div>
-                </div>
-
-                <h3 className="font-black text-slate-900 text-xl tracking-tight mb-4 group-hover:text-emerald-600 transition-colors">
-                  {driver.full_name}
-                </h3>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <MapPin size={12} className="text-emerald-500" />
-                    <span className="text-[10px] font-bold uppercase tracking-tight truncate">
-                      {driver.assigned_route}
-                    </span>
-                  </div>
-
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 group-hover:bg-emerald-50/30 group-hover:border-emerald-100 transition-all">
-                    <div className="flex justify-between items-end mb-2">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp size={14} className="text-emerald-600" />
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                          Efficiency
-                        </span>
-                      </div>
-                      <span className="text-lg font-black text-slate-900">
-                        {driver.efficiency_score}%
-                      </span>
-                    </div>
-                    {/* Efficiency Bar UX Improvement */}
-                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
-                        style={{ width: `${driver.efficiency_score}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* View Action Overlay */}
-              <div className="absolute right-4 bottom-20 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                <div className="p-2 bg-emerald-600 text-white rounded-full shadow-lg">
-                  <ArrowRight size={16} />
-                </div>
-              </div>
-            </div>
-          ))}
+      ) : filtered.length === 0 ? (
+        <div className="py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100">
+          <UserX size={36} className="mx-auto text-slate-200 mb-3" />
+          <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No operators found</p>
         </div>
       ) : (
-        /* Empty State UX Improvement */
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
-          <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center text-slate-300 mb-4">
-            <UserX size={40} />
-          </div>
-          <h3 className="text-lg font-black text-slate-900 uppercase">
-            No Operators Found
-          </h3>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-            Try adjusting your search or filters
-          </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filtered.map(d => {
+            const ec2 = ec(d.employment_status);
+            return (
+              <div key={d.id} className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:border-emerald-200 transition-all overflow-hidden cursor-pointer"
+                onClick={() => setSelected(d)}>
+                <div className={`h-1 w-full ${d.employment_status === "ACTIVE" ? "bg-emerald-500" : d.employment_status === "INACTIVE" ? "bg-amber-400" : "bg-red-500"}`} />
+                <div className="p-5">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-11 h-11 rounded-xl flex-shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden">
+                      {d.avatar_url
+                        ? <img src={d.avatar_url} alt={d.full_name} className="w-full h-full object-cover" />
+                        : <span className="text-sm font-black text-slate-500">{initials(d.full_name)}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{d.full_name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[d.duty_status] ?? "bg-slate-300"}`} />
+                        <span className={`text-[9px] font-bold uppercase ${d.duty_status === "ON-DUTY" ? "text-emerald-600" : "text-slate-400"}`}>
+                          {d.duty_status}
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase ${ec2.bg} ${ec2.text} ${ec2.border}`}>
+                      {d.employment_status}
+                    </span>
+                  </div>
+
+                  {/* Plate + vehicle */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="px-3 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black tracking-widest font-mono">
+                      {d.vehicle_plate_number ?? "NO PLATE"}
+                    </div>
+                    {d.vehicle_type && (
+                      <span className="text-[9px] font-bold text-slate-500 uppercase">{d.vehicle_type}</span>
+                    )}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {[
+                      { label: "Trips",     value: d.collections_count },
+                      { label: "Schedules", value: d.schedules_count },
+                      { label: "Last Trip", value: d.last_collection ? new Date(d.last_collection).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "—" },
+                    ].map(s => (
+                      <div key={s.label} className="text-center">
+                        <p className="text-sm font-black text-slate-700">{s.value}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-colors">
+                    View Details
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <AddDriverModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onAdd={handleAddDriver}
-        loading={loading}
-      />
+      {/* ── DRIVER DETAIL MODAL ── */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setSelected(null)} />
+          <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className={`h-1.5 w-full ${selected.employment_status === "ACTIVE" ? "bg-emerald-500" : "bg-amber-400"}`} />
+            <div className="p-6 overflow-y-auto max-h-[85vh]">
+              <div className="flex items-start gap-4 mb-6">
+                <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
+                  {selected.avatar_url
+                    ? <img src={selected.avatar_url} alt={selected.full_name} className="w-full h-full object-cover" />
+                    : <span className="text-lg font-black text-slate-500">{initials(selected.full_name)}</span>}
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-xl font-black text-slate-900">{selected.full_name}</h2>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div className={`w-2 h-2 rounded-full ${selected.duty_status === "ON-DUTY" ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+                    <span className={`text-[10px] font-bold uppercase ${selected.duty_status === "ON-DUTY" ? "text-emerald-600" : "text-slate-400"}`}>
+                      {selected.duty_status}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-800 p-1">✕</button>
+              </div>
 
-      <DriverSheet
-        selectedDriver={selectedDriver}
-        setSelectedDriver={setSelectedDriver}
-        onRemove={handleRemoveDriver}
-        onRestore={handleRestoreDriver}
-        loading={loading}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {[
+                  { label: "Email",         value: selected.email ?? "N/A",                icon: <Mail size={11} /> },
+                  { label: "Contact",       value: selected.contact_number ?? "N/A",        icon: <Phone size={11} /> },
+                  { label: "License",       value: selected.license_number ?? "N/A",        icon: <ShieldCheck size={11} /> },
+                  { label: "Plate No.",     value: selected.vehicle_plate_number ?? "N/A",  icon: <Hash size={11} /> },
+                  { label: "Vehicle Type",  value: selected.vehicle_type ?? "N/A",          icon: <Truck size={11} /> },
+                  { label: "Assigned Route",value: selected.assigned_route ?? "Unassigned", icon: <MapPin size={11} /> },
+                  { label: "Total Trips",   value: String(selected.collections_count),      icon: <CheckCircle2 size={11} /> },
+                  { label: "Schedules",     value: String(selected.schedules_count),        icon: <Calendar size={11} /> },
+                  { label: "Last Trip",     value: fmtDate(selected.last_collection),       icon: <Clock size={11} /> },
+                ].map(f => (
+                  <div key={f.label} className="p-3 bg-slate-50 rounded-xl">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mb-1">{f.icon}{f.label}</p>
+                    <p className="text-xs font-bold text-slate-800 truncate">{f.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Employment actions */}
+              <div className="flex gap-3 pt-2">
+                {selected.employment_status === "ACTIVE" && (
+                  <>
+                    <button onClick={() => toggleEmployment(selected, "INACTIVE")} disabled={processing}
+                      className="flex-1 py-3 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-500 hover:text-white transition-all disabled:opacity-50">
+                      Set Inactive
+                    </button>
+                    <button onClick={() => toggleEmployment(selected, "REMOVED")} disabled={processing}
+                      className="flex-1 py-3 bg-red-50 text-red-700 border border-red-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all disabled:opacity-50">
+                      Remove
+                    </button>
+                  </>
+                )}
+                {selected.employment_status !== "ACTIVE" && (
+                  <button onClick={() => toggleEmployment(selected, "ACTIVE")} disabled={processing}
+                    className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-50">
+                    {processing ? <><RefreshCcw size={12} className="inline animate-spin mr-1" />Processing…</> : "Restore to Active"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveOk && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] bg-emerald-600 text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-xl text-[11px] font-black uppercase tracking-widest">
+          <CheckCircle2 size={14} /> {saveMsg}
+        </div>
+      )}
+
+      {/* ── ADD DRIVER MODAL ── */}
+      <AddDriverModal
+        isOpen={showAdd}
+        onClose={() => setShowAdd(false)}
+        onSuccess={() => {
+          setShowAdd(false);
+          loadScope().then(sc => { setScope(sc); fetchDrivers(sc); });
+        }}
       />
     </div>
   );
