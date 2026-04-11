@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import AdminBinMarker from "./AdminBinMarker";
-import BinSimulator from "./Binsimulator";           // ← NEW
+import BinPlacementSimulator from "./BinPlacementSimulator";           // ← NEW
 import { LUPON_CENTER } from "@/components/map/MapAssets";
 import { createClient } from "@/utils/supabase/client";
 import "leaflet/dist/leaflet.css";
@@ -145,7 +145,7 @@ export default function BinMapView() {
       {/* ── SIMULATE TAB ────────────────────────────────────────────────── */}
       {activeTab === "simulate" && (
         <div className="flex-1 relative">
-          <BinSimulator mapStyle={mapStyle} />
+          <BinPlacementSimulator/>
         </div>
       )}
 

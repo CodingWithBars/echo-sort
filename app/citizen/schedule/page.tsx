@@ -12,7 +12,7 @@ import {
   CheckCircle, AlertTriangle, Info, Trash2, Megaphone,
   Shield, FileText, Search,
 } from "lucide-react";
-import CitizenProfileView from "@/components/citizen/CitizenProfileView";
+import CitizenProfileViewInner from "@/components/citizen/CitizenProfileView";
 
 const supabase = createClient();
 
@@ -437,9 +437,61 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
   );
 }
 
+// ── CITIZEN PROFILE PANEL ─────────────────────────────────────────────────────
+// Slides in from right, top:80px (below h-20 topnav).
+// Wraps CitizenProfileView in a panel shell — no redundant stats shown.
+// Citizen-focused: eco score, barangay, purok, avatar upload, account edit.
+
+function CitizenProfilePanel({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}) {
+  const SLIDE = `@keyframes slideInRight{from{transform:translateX(100%)}to{transform:translateX(0)}}`;
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} className="fixed inset-0 z-[700] bg-black/25 backdrop-blur-sm"/>
+
+      {/* Panel — top:80px clears the h-20 header */}
+      <div style={{
+        position:"fixed",top:80,right:0,bottom:0,zIndex:800,
+        width:"min(480px,100vw)",background:"#fff",
+        boxShadow:"-8px 0 48px rgba(0,0,0,.15)",
+        display:"flex",flexDirection:"column",
+        animation:"slideInRight .25s cubic-bezier(.4,0,.2,1) both",
+        fontFamily:"sans-serif",
+      }}>
+        <style>{SLIDE}</style>
+
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-6 py-5 bg-emerald-50 border-b border-emerald-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {profile.avatar_url
+                ?<img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover"/>
+                :<span className="font-black text-white italic text-base">{profile.full_name.charAt(0)}</span>
+              }
+            </div>
+            <div>
+              <p className="text-sm font-black text-slate-900 uppercase italic">{profile.full_name}</p>
+              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{profile.barangay} · {profile.purok}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all">
+            <X size={15} className="text-slate-500"/>
+          </button>
+        </div>
+
+        {/* CitizenProfileView handles its own data fetch + all editing */}
+        <div className="flex-1 overflow-y-auto">
+          <CitizenProfileViewInner/>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
 // ── MAIN PAGE ──────────────────────────────────────────────────────────────────
 
-type Tab = "map" | "schedule" | "score" | "news" | "profile";
+type Tab = "map" | "schedule" | "score" | "news";
 
 export default function CitizenDashboard() {
   const router = useRouter();
@@ -456,6 +508,7 @@ export default function CitizenDashboard() {
   const [isSidebarOpen, setSidebarOpen]  = useState(false);
   const [showLogout,    setShowLogout]   = useState(false);
   const [isLoggingOut,  setIsLoggingOut] = useState(false);
+  const [showProfile,   setShowProfile]   = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -515,7 +568,7 @@ export default function CitizenDashboard() {
     {id:"news",     label:"Barangay News", icon:"📢"},
   ] as const;
 
-  const currentLabel=menuItems.find(m=>m.id===activeTab)?.label ?? (activeTab==="profile"?"My Profile":"Dashboard");
+  const currentLabel=menuItems.find(m=>m.id===activeTab)?.label ?? "Dashboard";
 
   if (loading) return (
     <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
@@ -620,14 +673,14 @@ export default function CitizenDashboard() {
 
             {/* ── PROFILE BADGE — clicking opens CitizenProfileView ── */}
             <button
-              onClick={()=>setActiveTab(activeTab==="profile"?"map":"profile")}
+              onClick={()=>setShowProfile(true)}
               className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.8rem] border transition-all duration-300 ${
-                activeTab==="profile"
+                showProfile
                   ?"bg-slate-950 border-slate-900 shadow-xl"
                   :"bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"}`}
             >
               {/* Avatar */}
-              <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border transition-all duration-300 ${activeTab==="profile"?"border-emerald-500/50 scale-105":"border-slate-200"}`}>
+              <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border transition-all duration-300 ${showProfile?"border-emerald-500/50 scale-105":"border-slate-200"}`}>
                 {profile?.avatar_url?(
                   <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
                 ):(
@@ -638,12 +691,12 @@ export default function CitizenDashboard() {
               </div>
               {/* Name + status */}
               <div className="text-left hidden md:block">
-                <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${activeTab==="profile"?"text-white":"text-slate-900"}`}>
+                <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${showProfile?"text-white":"text-slate-900"}`}>
                   {profile?.full_name??"Valued Citizen"}
                 </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
-                  <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${activeTab==="profile"?"text-emerald-400/80":"text-slate-400"}`}>
+                  <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${showProfile?"text-emerald-400/80":"text-slate-400"}`}>
                     {profile?.purok} • Authorized
                   </p>
                 </div>
@@ -853,21 +906,17 @@ export default function CitizenDashboard() {
             </div>
           )}
 
-          {/* PROFILE — CitizenProfileView */}
-          {activeTab==="profile"&&(
-            <div className="max-w-3xl mx-auto p-6 lg:p-10 animate-in slide-in-from-bottom-4 duration-500">
-              <div className="mb-6">
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">My Profile</h2>
-                <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">
-                  {profile?.full_name} · {profile?.barangay}
-                </p>
-              </div>
-              {/* CitizenProfileView handles its own data fetch */}
-              <CitizenProfileView/>
-            </div>
-          )}
+          {/* Profile is now in CitizenProfilePanel slide-over — opened via profile badge */}
         </div>
       </main>
+
+      {/* Citizen Profile Panel — slide-over from right, top:80px */}
+      {showProfile&&profile&&(
+        <CitizenProfilePanel
+          profile={profile}
+          onClose={()=>setShowProfile(false)}
+        />
+      )}
 
       {/* Modals */}
       {showReport&&profile&&<ReportModal profile={profile} onClose={()=>setShowReport(false)}/>}
