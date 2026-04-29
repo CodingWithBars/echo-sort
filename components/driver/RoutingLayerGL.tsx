@@ -11,6 +11,10 @@
 //   3. All legs merged into a single GeoJSON FeatureCollection per role
 //      (glow / line) — one Source, one Layer each, avoids ID collision entirely.
 //   4. Toast is rendered outside <Map> in the parent's DOM overlay area.
+//
+// BYPASS ROUTE:
+//   • onRouteUpdate now includes `uturnCount` so DriverMap can pass it to
+//     BypassRoutePanel for algorithm-vs-bypass comparison.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
@@ -77,7 +81,8 @@ interface RoutingProps {
   driverPos:       [number, number];
   bins:            any[];
   selectedBinId:   number | null;
-  onRouteUpdate:   (stats: { dist: string; time: string }) => void;
+  /** BYPASS ROUTE: now also passes uturnCount alongside dist/time */
+  onRouteUpdate:   (stats: { dist: string; time: string; uturnCount: number }) => void;
   onOrderUpdate?:  (orderedBins: any[]) => void;
   routeKey?:       number;
   mode?:           "fastest" | "priority";
@@ -308,7 +313,6 @@ function SequenceMarker({ bin, stopNum, isSelected, isUturn }: {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GEOJSON HELPERS — merge all legs into single FeatureCollections
-// This avoids Source ID clashes when leg count changes between renders.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface LegData {
@@ -332,12 +336,10 @@ function buildFeatureCollection(legs: LegData[]): GeoJSON.FeatureCollection<GeoJ
           color:    l.color,
           width:    l.width,
           opacity:  l.opacity,
-          // dashArray as comma string — MapLibre doesn't support array expressions easily
           dash:     l.dashArray ? l.dashArray.join(",") : "",
         },
         geometry: {
           type: "LineString" as const,
-          // MapLibre uses [lng, lat]
           coordinates: l.coords.map(c => [c[1], c[0]]),
         },
       })),
@@ -357,20 +359,18 @@ export default function RoutingLayerGL({
   const stablePos = routingPos ?? driverPos;
   const abortRef  = useRef<AbortController | null>(null);
 
-  // Route state — one FeatureCollection for glow, one for solid lines
-  const [glowFC, setGlowFC]   = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
-  const [lineFC, setLineFC]   = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
-  const [previewFC, setPreviewFC] = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
+  const [glowFC,     setGlowFC]     = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
+  const [lineFC,     setLineFC]     = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
+  const [previewFC,  setPreviewFC]  = useState<GeoJSON.FeatureCollection<GeoJSON.LineString> | null>(null);
   const [seqMarkers, setSeqMarkers] = useState<{ bin: any; stopNum: number; isSelected: boolean; isUturn: boolean }[]>([]);
 
-  // Toast
-  const [toast, setToast]         = useState<ToastState>(null);
-  const orderedStopsRef           = useRef<any[]>([]);
-  const notifiedRef               = useRef<Set<string>>(new Set());
-  const toastTimerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onRouteUpdateRef          = useRef(onRouteUpdate);
+  const [toast,       setToast]       = useState<ToastState>(null);
+  const orderedStopsRef               = useRef<any[]>([]);
+  const notifiedRef                   = useRef<Set<string>>(new Set());
+  const toastTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onRouteUpdateRef              = useRef(onRouteUpdate);
   useEffect(() => { onRouteUpdateRef.current = onRouteUpdate; });
-  const onOrderUpdateRef          = useRef(onOrderUpdate);
+  const onOrderUpdateRef              = useRef(onOrderUpdate);
   useEffect(() => { onOrderUpdateRef.current = onOrderUpdate; });
 
   // Proximity check
@@ -398,10 +398,6 @@ export default function RoutingLayerGL({
 
   useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
 
-  // ── STABLE BIN SIGNATURE ──────────────────────────────────────────────────
-  // Stringify bin IDs + fill levels → stable string dep instead of array ref.
-  // Prevents A* from firing on every render just because the array was recreated.
-  // routeKey is the intentional "recalculate now" trigger (incremented by dashboard).
   const binsSig = bins.map((b: any) => `${b.id}:${b.fillLevel}`).join(",");
 
   // ── MAIN EFFECT ───────────────────────────────────────────────────────────
@@ -413,12 +409,8 @@ export default function RoutingLayerGL({
     abortRef.current = new AbortController();
     const signal = abortRef.current.signal;
 
-    // Clear
     setGlowFC(null); setLineFC(null); setPreviewFC(null); setSeqMarkers([]);
 
-    // Target selection
-    // In scheduled route mode (maxDetour >= 9999 set by DriverMap), include ALL
-    // passed bins regardless of fill level — the dashboard already strips collected ones.
     const isScheduledMode = maxDetour >= 9999;
     let targets = isScheduledMode
       ? [...bins]
@@ -429,13 +421,11 @@ export default function RoutingLayerGL({
       targets = targets.filter((b: any) => getDistance(stablePos!, [b.lat, b.lng]) < maxDetour);
     if (targets.length === 0) return;
 
-    // Build nodes
     const binCoords: [number, number][] = targets.map((t: any) => [t.lat, t.lng]);
     const hasDestination = !!destinationPos;
     const allNodes: [number, number][] = [stablePos!, ...binCoords, ...(hasDestination ? [destinationPos!] : [])];
     const destNodeIdx = hasDestination ? allNodes.length - 1 : -1;
 
-    // A*
     const distMat = buildHeadingAwareMatrix(allNodes, heading, destNodeIdx);
     const orderedIndices = hasDestination
       ? astarTSPWithDestination(allNodes, distMat, destNodeIdx)
@@ -454,7 +444,6 @@ export default function RoutingLayerGL({
     const uturnLegSet = new Set<number>();
     uturnStops.forEach(s => uturnLegSet.add(s - 1));
 
-    // Preview line while Mapbox fetches road geometry
     const previewFeature: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
       type: "FeatureCollection",
       features: [{
@@ -465,7 +454,6 @@ export default function RoutingLayerGL({
     };
     setPreviewFC(previewFeature);
 
-    // Sequence markers
     const orderedWithMeta = orderedTargets.map((bin: any, idx: number) => ({
       ...bin, requiresUturn: uturnStops.has(idx + 1),
     }));
@@ -480,7 +468,6 @@ export default function RoutingLayerGL({
     setToast(null);
     onOrderUpdateRef.current?.(orderedWithMeta);
 
-    // Fetch road geometry
     const SNAP_RADIUS     = 500;
     const SNAP_RADIUS_MID = 150;
     const BEARING_TOL     = 45;
@@ -548,16 +535,19 @@ export default function RoutingLayerGL({
 
         setGlowFC(buildFeatureCollection(glowLegs));
         setLineFC(buildFeatureCollection(lineLegs));
-        setPreviewFC(null); // hide preview
+        setPreviewFC(null);
 
         const totalDist     = legs.reduce((s, l) => s + l.dist, 0);
         const totalDuration = legs.reduce((s, l) => s + l.duration, 0);
+
+        // ── BYPASS ROUTE: count algorithm U-turns and include in callback ──
+        const algoUturnCount = legs.filter(l => l.isUturnLeg).length;
         onRouteUpdateRef.current({
-          dist: `${(totalDist / 1000).toFixed(1)} km`,
-          time: `${Math.round(totalDuration / 60)} min`,
+          dist:       `${(totalDist / 1000).toFixed(1)} km`,
+          time:       `${Math.round(totalDuration / 60)} min`,
+          uturnCount: algoUturnCount,
         });
 
-        // Fit bounds
         const allCoords = legs.flatMap(l => l.coords);
         if (allCoords.length > 1 && mapInstance) {
           const lngs = allCoords.map(c => c[1]), lats = allCoords.map(c => c[0]);
@@ -573,7 +563,6 @@ export default function RoutingLayerGL({
 
     return () => { abortRef.current?.abort(); };
 
-  // mapInstance in deps — effect re-runs when map becomes available
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapInstance, stablePos, binsSig, selectedBinId, routeKey, mode, useFence, maxDetour, heading, destinationPos]);
 
@@ -583,7 +572,6 @@ export default function RoutingLayerGL({
 
   return (
     <>
-      {/* Preview connector (straight lines while loading) */}
       {previewFC && (
         <Source id="route-preview" type="geojson" data={previewFC}>
           <Layer id="route-preview-line" type="line" paint={{
@@ -594,7 +582,6 @@ export default function RoutingLayerGL({
         </Source>
       )}
 
-      {/* Glow halo layer — single Source with all legs */}
       {glowFC && (
         <Source id="route-glow" type="geojson" data={glowFC}>
           <Layer id="route-glow-layer" type="line"
@@ -609,7 +596,6 @@ export default function RoutingLayerGL({
         </Source>
       )}
 
-      {/* Solid line layer */}
       {lineFC && (
         <Source id="route-lines" type="geojson" data={lineFC}>
           <Layer id="route-lines-layer" type="line"
@@ -623,12 +609,10 @@ export default function RoutingLayerGL({
         </Source>
       )}
 
-      {/* Sequence markers */}
       {seqMarkers.map(m => (
         <SequenceMarker key={m.bin.id} {...m} />
       ))}
 
-      {/* Toast */}
       <ProximityToast toast={toast} />
     </>
   );

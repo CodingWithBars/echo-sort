@@ -7,7 +7,8 @@ import { BinLabelToggleButton } from "../driver/BinMarker";
 
 const supabase = createClient();
 
-// --- Types ---
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface CollectionLog {
   id: number;
   name: string;
@@ -35,14 +36,18 @@ interface DashboardProps {
   setMaxDetour: (v: number) => void;
   useFence: boolean;
   setUseFence: (v: boolean) => void;
+  /** BYPASS ROUTE — called when driver taps "Record Bypass Route" */
+  onBypassRecord?: () => void;
 }
+
+// ── Main Component ────────────────────────────────────────────────────────────
 
 export default function EcoDashboard(props: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncing, setIsSyncing]       = useState(false);
+  const [isSyncing,    setIsSyncing]    = useState(false);
   const { bins, eta, history, isTracking, onRefresh, routingMode } = props;
 
-  // --- Realtime Sync Logic ---
+  // Realtime duty-status sync
   useEffect(() => {
     const syncStatus = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -52,42 +57,29 @@ export default function EcoDashboard(props: DashboardProps) {
         .channel("dashboard-status-sync")
         .on(
           "postgres_changes",
-          {
-            event:  "UPDATE",
-            schema: "public",
-            table:  "driver_details",
-            filter: `id=eq.${user.id}`,
-          },
+          { event: "UPDATE", schema: "public", table: "driver_details", filter: `id=eq.${user.id}` },
           (payload: RealtimePostgresUpdatePayload<DriverDetails>) => {
             const isNowOnDuty = payload.new.duty_status === "ON-DUTY";
-            if (isNowOnDuty && !isTracking)  props.onStartTracking();
-            if (!isNowOnDuty && isTracking)  props.onStopTracking();
+            if (isNowOnDuty && !isTracking) props.onStartTracking();
+            if (!isNowOnDuty && isTracking) props.onStopTracking();
           }
         )
         .subscribe();
 
       return () => { supabase.removeChannel(channel); };
     };
-
     syncStatus();
   }, [isTracking, props]);
 
-  // --- Database Toggle Logic ---
   const handleToggleTracking = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
     setIsSyncing(true);
     const nextStatus = isTracking ? "OFF-DUTY" : "ON-DUTY";
-
-    const { error } = await supabase
-      .from("driver_details")
-      .update({ duty_status: nextStatus })
-      .eq("id", user.id);
-
+    const { error } = await supabase.from("driver_details").update({ duty_status: nextStatus }).eq("id", user.id);
     if (!error) {
       if (nextStatus === "ON-DUTY") props.onStartTracking();
-      else                          props.onStopTracking();
+      else props.onStopTracking();
     } else {
       console.error("Failed to update status:", error.message);
     }
@@ -104,9 +96,10 @@ export default function EcoDashboard(props: DashboardProps) {
 
   return (
     <div className="flex flex-col h-full bg-white">
+
+      {/* ── Scrollable Content ─────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-5 md:p-8 custom-scrollbar">
 
-        {/* Mode + Fence Toggle */}
         <ModeSelector
           mode={routingMode}
           setMode={props.setRoutingMode}
@@ -114,13 +107,10 @@ export default function EcoDashboard(props: DashboardProps) {
           setUseFence={props.setUseFence}
         />
 
-        {/* Route Summary Card */}
         <RouteSummary eta={eta} mode={routingMode} />
 
-        {/* Detour Slider */}
         <DetourSlider value={props.maxDetour} onChange={props.setMaxDetour} />
 
-        {/* Stat Cards */}
         <div className="space-y-3 mb-6">
           <StatCard
             label="Active Stops"
@@ -131,11 +121,10 @@ export default function EcoDashboard(props: DashboardProps) {
           />
         </div>
 
-        {/* Collection Log */}
         <CollectionHistory history={history} onClear={props.onClearHistory} />
       </div>
 
-      {/* Persistent Action Footer */}
+      {/* ── Persistent Footer ──────────────────────────────────────────────── */}
       <div className="p-5 border-t border-slate-100 bg-white/90 backdrop-blur-md pb-8">
         <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
 
@@ -167,6 +156,27 @@ export default function EcoDashboard(props: DashboardProps) {
             {isRefreshing ? "Optimizing..." : "Recalculate Path"}
           </button>
 
+          {/* ── BYPASS ROUTE BUTTON ─────────────────────────────────────────
+              Shown when driver is tracking (GPS on).
+              Lives here so it is always visible — both on desktop sidebar
+              and on mobile bottom sheet — regardless of map overlay state.
+          ──────────────────────────────────────────────────────────────── */}
+          {isTracking && props.onBypassRecord && (
+            <button
+              onClick={props.onBypassRecord}
+              className="w-full py-3 rounded-[1.8rem] font-black text-[10px] uppercase flex justify-center items-center gap-2 border-2 transition-all active:scale-95 bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
+            >
+              {/* Road-split icon */}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 2 L8 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                <path d="M8 7 L4 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                <path d="M8 7 L12 14" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2 2"/>
+                <circle cx="8" cy="7" r="1.5" fill="currentColor"/>
+              </svg>
+              Record Bypass Route
+            </button>
+          )}
+
           {/* Marker label toggle */}
           <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-[1.8rem] px-5 py-3">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -181,7 +191,7 @@ export default function EcoDashboard(props: DashboardProps) {
   );
 }
 
-// ─── Sub-Components ───────────────────────────────────────────────────────────
+// ── Sub-Components ────────────────────────────────────────────────────────────
 
 function ModeSelector({ mode, setMode, useFence, setUseFence }: any) {
   return (
@@ -231,7 +241,7 @@ function DetourSlider({ value, onChange }: any) {
       <input
         type="range" min="50" max="800" step="50"
         value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
+        onChange={e => onChange(parseInt(e.target.value))}
         className="w-full h-2 bg-emerald-100 rounded-lg appearance-none cursor-pointer accent-emerald-500"
       />
     </div>

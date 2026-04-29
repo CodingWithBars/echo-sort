@@ -5,12 +5,16 @@
 // When `activeBins` is provided by a running travel order (via DriverDashboard),
 // those bins override the live DB bins for routing so RoutingLayerGL targets
 // the specific scheduled collection stops.
+//
+// BYPASS ROUTE: BypassRoutePanel is triggered by a callback that flows through
+// DriverSidebar → EcoDashboard footer button (desktop) and the mobile drag-handle
+// FAB. DriverMapDisplay no longer owns the bypass trigger.
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/utils/supabase/client";
 import DriverMapDisplay from "./DriverMapDisplayGL";
 import DriverSidebar from "./DriverSidebar";
-import NavigationControls from "../ui/NavigationControls";
+import BypassRoutePanel from "./Bypassroutepanel";
 import type { StyleSpecification } from "maplibre-gl";
 
 const supabase = createClient();
@@ -47,12 +51,18 @@ export interface RoutingBin {
 }
 
 interface DriverMapProps {
-  /** Bins from active travel order — overrides DB bins for routing */
-  activeBins?:     RoutingBin[];
-  hasActiveRoute?: boolean;
+  activeBins?:       RoutingBin[];
+  hasActiveRoute?:   boolean;
+  activeScheduleId?: string;
+  vehicleType?:      string;
 }
 
-export default function DriverMap({ activeBins = [], hasActiveRoute = false }: DriverMapProps) {
+export default function DriverMap({
+  activeBins = [],
+  hasActiveRoute = false,
+  activeScheduleId,
+  vehicleType = "truck",
+}: DriverMapProps) {
   const [dbBins,        setDbBins]        = useState<RoutingBin[]>([]);
   const [history,       setHistory]       = useState<CollectionLog[]>([]);
   const [driverPos,     setDriverPos]     = useState<[number, number] | null>(null);
@@ -68,8 +78,21 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
   const [isSidebarOpen,      setIsSidebarOpen]      = useState(true);
   const [isDashboardVisible, setIsDashboardVisible] = useState(true);
 
+  // ── Bypass route state ────────────────────────────────────────────────────
+  const [userId,              setUserId]              = useState<string>("");
+  const [bypassPanelOpen,     setBypassPanelOpen]     = useState(false);
+  const [activeBypassRouteId, setActiveBypassRouteId] = useState<string | null>(null);
+  const [algorithmUturnCount, setAlgorithmUturnCount] = useState(0);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: { id: string } | null } }) => {
+      if (user) setUserId(user.id);
+    });
+  }, []);
+
+  // ── Bin fetching ──────────────────────────────────────────────────────────
+
   const fetchBins = useCallback(async () => {
-    // Scope bins to driver's municipality — get it from their schedule assignments
     const { data: { user } } = await supabase.auth.getUser();
     let muni: string | null = null;
     if (user) {
@@ -81,7 +104,6 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
         .limit(1);
       muni = (sched as any)?.[0]?.collection_schedules?.municipality ?? null;
     }
-
     const q = supabase.from("bins").select("id,name,lat,lng,fill_level,battery_level,municipality,barangay");
     const { data } = muni ? await q.eq("municipality", muni) : await q;
     if (data) setDbBins((data as BinRow[]).map(b => ({
@@ -93,33 +115,29 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
   useEffect(() => {
     fetchBins();
     const ch = supabase.channel("realtime-bins")
-      .on("postgres_changes", { event:"*", schema:"public", table:"bins" }, fetchBins)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, fetchBins)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [fetchBins]);
 
-  // Trigger A* only when a NEW travel order starts (prev length was 0, now > 0).
-  // Collecting individual bins (N→N-1) must NOT re-trigger A* — RoutingLayerGL
-  // already re-runs via binsSig when bins change.
+  // ── Route key trigger (new travel order) ─────────────────────────────────
+
   const prevActiveLenRef = useRef(0);
   useEffect(() => {
     const prev = prevActiveLenRef.current;
     prevActiveLenRef.current = activeBins.length;
     if (prev === 0 && activeBins.length > 0) {
-      // New route started — force fresh A* calculation
       setRouteKey(k => k + 1);
       if (!isTracking) setIsTracking(true);
     }
-    // Do NOT re-trigger on length decrease (bin collected) or length increase
-    // from same route — binsSig handles incremental updates in RoutingLayerGL.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBins.length]);
 
-  // When a travel order is active: route only through uncollected scheduled bins.
-  // Otherwise use all live DB bins (normal freeform mode).
   const routingBins = hasActiveRoute && activeBins.length > 0
     ? activeBins.filter(b => !b.collected)
     : dbBins;
+
+  // ── GPS tracking ──────────────────────────────────────────────────────────
 
   const toggleTracking = () => {
     if (isTracking) {
@@ -142,9 +160,37 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
   const addToHistory = useCallback((e: CollectionLog) => setHistory(p => [e, ...p]), []);
   const clearHistory = useCallback(() => setHistory([]), []);
 
+  // ── Route update — capture ETA + uturn count ──────────────────────────────
+
+  const handleRouteUpdate = useCallback((stats: { dist: string; time: string; uturnCount?: number }) => {
+    setEta({ dist: stats.dist, time: stats.time });
+    if (stats.uturnCount !== undefined) setAlgorithmUturnCount(stats.uturnCount);
+  }, []);
+
+  // ── Bypass route callbacks ────────────────────────────────────────────────
+
+  /**
+   * Called by EcoDashboard footer button (desktop) and mobile drag-handle FAB.
+   * Opens the BypassRoutePanel overlay.
+   */
+  const handleBypassRecord = useCallback(() => {
+    setBypassPanelOpen(true);
+  }, []);
+
+  const handleBypassModeToggle = useCallback((enabled: boolean) => {
+    setBypassPanelOpen(enabled);
+    if (!enabled) setActiveBypassRouteId(null);
+  }, []);
+
+  const handleBypassRouteRecorded = useCallback((routeId: string) => {
+    setActiveBypassRouteId(routeId);
+    setBypassPanelOpen(false);
+  }, []);
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-slate-950 overflow-hidden relative">
-      <NavigationControls isNavMode={isTracking} setIsNavMode={toggleTracking} heading={heading}/>
+
+      {/* ── Map ───────────────────────────────────────────────────────────── */}
       <DriverMapDisplay
         bins={routingBins}
         allBins={dbBins}
@@ -157,9 +203,39 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
         maxDetour={hasActiveRoute ? 99999 : maxDetour}
         useFence={hasActiveRoute ? false : useFence}
         mapStyle={MAP_STYLE}
-        onRouteUpdate={setEta}
+        onRouteUpdate={handleRouteUpdate}
         isTracking={isTracking}
       />
+
+      {/* ── Bypass Route Panel overlay ────────────────────────────────────── 
+          Rendered only when the driver opens it via the button.
+          isActive drives the recording/comparison UI inside the panel.
+      ──────────────────────────────────────────────────────────────────── */}
+      {userId && bypassPanelOpen && (
+        <BypassRoutePanel
+          isActive={isTracking}
+          driverPos={driverPos}
+          heading={heading}
+          currentBin={
+            routingBins.length > 0
+              ? routingBins[0]
+              : { id: 0, name: "Start", lat: driverPos?.[0] ?? 0, lng: driverPos?.[1] ?? 0, fillLevel: 0, batteryLevel: 100 }
+          }
+          nextBins={routingBins.slice(1)}
+          algorithmRoute={{
+            distance:   eta.dist,
+            time:       eta.time,
+            uturnCount: algorithmUturnCount,
+          }}
+          onBypassModeToggle={handleBypassModeToggle}
+          onBypassRouteRecorded={handleBypassRouteRecorded}
+          vehicleType={vehicleType}
+          scheduleId={activeScheduleId}
+          driverId={userId}
+        />
+      )}
+
+      {/* ── Sidebar / bottom sheet ────────────────────────────────────────── */}
       <DriverSidebar
         bins={dbBins}
         eta={eta}
@@ -180,6 +256,7 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
         isDashboardVisible={isDashboardVisible}
         setIsDashboardVisible={setIsDashboardVisible}
         onAddToHistory={addToHistory}
+        onBypassRecord={isTracking ? handleBypassRecord : undefined}
       />
     </div>
   );
