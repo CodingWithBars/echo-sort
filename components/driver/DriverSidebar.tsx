@@ -3,27 +3,40 @@
 import EcoDashboard from "../ui/EcoDashboard";
 
 interface DriverSidebarProps {
+  // Data
   bins: any[];
   eta: { dist: string; time: string };
   history: any[];
   isTracking: boolean;
+
+  // Actions
   onStartTracking: () => void;
   onStopTracking: () => void;
   onRefresh: () => void;
+
+  // FIX #2: onClearHistory is now declared so it can be forwarded
   onClearHistory: () => void;
+
+  // FIX #3: onAddToHistory forwarded to EcoDashboard / children that log collections
   onAddToHistory?: (entry: { id: number; name: string; time: string }) => void;
+
+  // ADD THESE TWO LINES:
+  mapStyle?: any; 
+  setMapStyle?: (s: any) => void;
+
+
   routingMode: "fastest" | "priority";
   setRoutingMode: (m: "fastest" | "priority") => void;
   maxDetour: number;
   setMaxDetour: (v: number) => void;
   useFence: boolean;
   setUseFence: (v: boolean) => void;
+
+  // UI visibility
   isSidebarOpen: boolean;
   setIsSidebarOpen: (v: boolean) => void;
   isDashboardVisible: boolean;
   setIsDashboardVisible: (v: boolean) => void;
-  /** BYPASS ROUTE — forwarded to EcoDashboard footer button */
-  onBypassRecord?: () => void;
 }
 
 export default function DriverSidebar({
@@ -34,8 +47,10 @@ export default function DriverSidebar({
   onStartTracking,
   onStopTracking,
   onRefresh,
-  onClearHistory,
-  onAddToHistory,
+  onClearHistory,    // FIX #2: now destructured
+  onAddToHistory,    // FIX #3: now destructured
+  // mapStyle,
+  // setMapStyle,
   routingMode,
   setRoutingMode,
   maxDetour,
@@ -46,21 +61,26 @@ export default function DriverSidebar({
   setIsSidebarOpen,
   isDashboardVisible,
   setIsDashboardVisible,
-  onBypassRecord,
 }: DriverSidebarProps) {
   return (
     <>
-      {/* ── Desktop sidebar toggle tab ──────────────────────────────────────── */}
+      {/* 1. BROWSER/DESKTOP TOGGLE */}
       <button
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className={`hidden md:flex fixed top-1/2 -translate-y-1/2 z-[1005]
-          bg-white border border-slate-200 border-r-0 shadow-[-6px_0_20px_rgba(0,0,0,0.1)]
-          w-10 h-28 items-center justify-center rounded-l-[1.5rem] transition-all duration-700
+        className={`hidden md:flex fixed top-1/2 -translate-y-1/2 z-[1005] 
+          bg-white border border-slate-200 border-r-0 shadow-[-6px_0_20px_rgba(0,0,0,0.1)] 
+          w-10 h-28 items-center justify-center rounded-l-[1.5rem] transition-all duration-700 
           hover:bg-emerald-50 group
           ${isSidebarOpen ? "right-[400px]" : "right-0"}`}
       >
         <div className="flex flex-col items-center gap-2">
-          <span className={`text-sm transition-transform duration-700 ${isSidebarOpen ? "rotate-0 text-slate-300" : "rotate-180 text-emerald-600 font-black"}`}>
+          <span
+            className={`text-sm transition-transform duration-700 ${
+              isSidebarOpen
+                ? "rotate-0 text-slate-300"
+                : "rotate-180 text-emerald-600 font-black"
+            }`}
+          >
             ▶
           </span>
           {!isSidebarOpen && (
@@ -71,62 +91,37 @@ export default function DriverSidebar({
         </div>
       </button>
 
-      {/* ── Sidebar / bottom-sheet container ───────────────────────────────── */}
+      {/* 2. SIDEBAR CONTAINER */}
       <div
-        className={`fixed md:relative z-[1001] transition-all duration-700
-          bottom-0 right-0 left-0 md:left-auto
-          ${isDashboardVisible ? "h-[80vh]" : "h-[70px]"}
-          ${isSidebarOpen ? "translate-x-0 md:w-[400px]" : "translate-x-full md:translate-x-0 md:w-0"}
-          md:h-full order-2`}
+        className={`fixed md:relative z-[1005] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+        bottom-0 right-0 left-0 md:left-auto h-[85vh] md:h-full
+        ${isDashboardVisible ? "translate-y-0" : "translate-y-full md:translate-y-0"} 
+        ${
+          isSidebarOpen
+            ? "md:translate-x-0 md:w-[400px]"
+            : "md:translate-x-full md:w-0"
+        } 
+        order-2`}
       >
-        <div className={`
-          h-full bg-white/95 backdrop-blur-xl shadow-2xl border-slate-200 flex flex-col overflow-hidden transition-all duration-500
-          border-t md:border-t-0 md:border-l
-          ${isDashboardVisible ? "rounded-t-[2.5rem]" : "rounded-t-none"}
-          md:rounded-none
-          ${!isSidebarOpen ? "md:opacity-0 pointer-events-none" : "opacity-100"}
-        `}>
-
-          {/* ── Mobile drag handle area ───────────────────────────────────────
-              On mobile the handle row also contains the bypass FAB so it is
-              always visible at the top edge of the sheet, above the content.
-              On desktop (md+) the bypass button lives inside EcoDashboard footer.
-          ──────────────────────────────────────────────────────────────────── */}
+        <div
+          className={`
+          h-full bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.15)] md:shadow-2xl border-slate-200 flex flex-col overflow-hidden transition-all duration-500
+          rounded-t-[32px] md:rounded-none md:border-l
+          ${!isDashboardVisible ? "pointer-events-none md:pointer-events-auto" : ""}
+          ${!isSidebarOpen ? "md:opacity-0 md:pointer-events-none" : "opacity-100"}
+        `}
+        >
+          {/* MOBILE-ONLY CLOSE HANDLE */}
           <div
-            className="w-full pt-3 pb-2 flex items-center justify-between px-5 cursor-pointer md:hidden"
-            onClick={() => setIsDashboardVisible(!isDashboardVisible)}
+            className="w-full pt-5 pb-3 flex flex-col items-center cursor-pointer md:hidden relative bg-white z-10"
+            onClick={() => setIsDashboardVisible(false)}
           >
-            {/* Left spacer keeps handle centred */}
-            <div className="w-10" />
-
-            {/* Drag handle pill */}
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full" />
-
-            {/* ── BYPASS FAB — mobile only, always above sheet ─────────────
-                Sits inside the drag-handle row so it is part of the sheet
-                header and never hidden by content below.
-                Tapping it does NOT collapse the sheet (stopPropagation).
-            ──────────────────────────────────────────────────────────────── */}
-            {isTracking && onBypassRecord ? (
-              <button
-                onClick={e => { e.stopPropagation(); onBypassRecord(); }}
-                className="w-10 h-10 rounded-2xl bg-purple-100 border-2 border-purple-300 text-purple-700 flex items-center justify-center active:scale-95 transition-all"
-                title="Record bypass route"
-              >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path d="M9 2 L9 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M9 8 L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M9 8 L14 16" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 2"/>
-                  <circle cx="9" cy="8" r="2" fill="currentColor"/>
-                </svg>
-              </button>
-            ) : (
-              /* Placeholder keeps handle centred when button is absent */
-              <div className="w-10" />
-            )}
+            <div className="w-16 h-1.5 bg-slate-200 rounded-full mb-3" />
+            <span className="text-sm font-black text-slate-800 tracking-tight">Settings & Overview</span>
+            <button className="absolute right-6 top-4 w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">✕</button>
           </div>
 
-          {/* ── Dashboard content ─────────────────────────────────────────── */}
+          {/* DASHBOARD CONTENT AREA */}
           <div className="flex-1 overflow-y-auto custom-scrollbar md:pb-24">
             <EcoDashboard
               bins={bins}
@@ -136,14 +131,16 @@ export default function DriverSidebar({
               onStartTracking={onStartTracking}
               onStopTracking={onStopTracking}
               onRefresh={onRefresh}
+              // FIX #2: forwarded through to EcoDashboard
               onClearHistory={onClearHistory}
+              // mapStyle={mapStyle}
+              // setMapStyle={setMapStyle}
               routingMode={routingMode}
               setRoutingMode={setRoutingMode}
               maxDetour={maxDetour}
               setMaxDetour={setMaxDetour}
               useFence={useFence}
               setUseFence={setUseFence}
-              onBypassRecord={onBypassRecord}
             />
           </div>
         </div>
