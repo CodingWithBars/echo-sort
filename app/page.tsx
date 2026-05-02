@@ -206,7 +206,7 @@ function SplashScreen({ loading }: { loading: boolean }) {
           background:"rgba(255,255,255,.12)",backdropFilter:"blur(12px)",
           border:"1.5px solid rgba(255,255,255,.25)",boxShadow:"0 20px 60px rgba(0,0,0,.3)",
           display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <img src="/icons/icon-512x512.png" alt="EcoRoute" style={{width:"100%",height:"100%",objectFit:"cover",padding:16}} />
+          <img src="/icons/eco-route.png" alt="EcoRoute" style={{width:"100%",height:"100%",objectFit:"cover",padding:16}} />
         </div>
         <h1 style={{fontFamily:"Georgia,serif",fontSize:42,fontWeight:900,color:"#fff",
           letterSpacing:"-.02em",lineHeight:1,margin:0}}>
@@ -362,7 +362,7 @@ export default function Home() {
           <div style={{width:34,height:34,borderRadius:9,overflow:"hidden",
             background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",
             display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <img src="/icons/icon-512x512.png" alt="" style={{width:"100%",height:"100%",objectFit:"cover",padding:6}}/>
+            <img src="/icons/eco-route.png" alt="" style={{width:"100%",height:"100%",objectFit:"cover",padding:6}}/>
           </div>
           <span style={{fontSize:20,fontWeight:900,color:"#fff",fontStyle:"italic",fontFamily:"Georgia,serif"}}>
             Eco<span style={{opacity:.5}}>Route</span>
