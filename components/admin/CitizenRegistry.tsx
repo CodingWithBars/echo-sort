@@ -38,14 +38,14 @@ interface Citizen {
 
 const SCORE_COLOR = (s: number | null) => {
   if (s === null) return "#94a3b8";
-  if (s >= 80) return "#059669";
-  if (s >= 60) return "#d97706";
-  return "#dc2626";
+  if (s >= 80) return "#10b981";
+  if (s >= 60) return "#f59e0b";
+  return "#ef4444";
 };
 
 const SCORE_LABEL = (s: number | null) => {
   if (s === null) return "No Data";
-  if (s >= 80) return "Good";
+  if (s >= 80) return "Excellent";
   if (s >= 60) return "At Risk";
   return "Critical";
 };
@@ -184,14 +184,14 @@ export default function CitizenRegistry({ onEditProfile }: { onEditProfile: (c: 
     <div className="space-y-6">
       {/* ── JURISDICTION BADGE ── */}
       {(scope.municipality || scope.barangay) && (
-        <div className="flex items-center gap-3 px-1">
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full">
-            <Building2 size={12} className="text-emerald-600" />
-            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"0 4px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:100}}>
+            <Building2 size={12} style={{color:"#1c4532"}} />
+            <span style={{fontSize:10,fontWeight:800,color:"#1c4532",textTransform:"uppercase",letterSpacing:".05em"}}>
               {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
             </span>
           </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <span style={{fontSize:11,fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".02em"}}>
             {filtered.length} residents
           </span>
         </div>
@@ -220,31 +220,36 @@ export default function CitizenRegistry({ onEditProfile }: { onEditProfile: (c: 
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="flex flex-col md:flex-row gap-4">
+        <div style={{position:"relative",flex:1}}>
+          <Search size={16} style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",color:"#9ca3af"}} />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, email, or ID…"
-            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-400 focus:ring-2 ring-emerald-400/10 transition-all placeholder:text-slate-300 uppercase tracking-wide" />
+            placeholder="Search residents by name or ID…"
+            style={{width:"100%",height:52,paddingLeft:48,paddingRight:20,background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,fontSize:14,color:"#111827",outline:"none"}}
+            className="focus:border-[#1c4532] transition-all" />
         </div>
 
         <select value={purokFilter} onChange={e => setPurokFilter(e.target.value)}
-          className="h-12 px-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl border-none outline-none cursor-pointer min-w-[140px]">
+          style={{height:52,padding:"0 20px",background:"#111827",color:"#fff",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",borderRadius:16,border:"none",outline:"none",cursor:"pointer",minWidth:140}}>
           {puroks.map(p => <option key={p} value={p}>{p === "All" ? "All Puroks" : `Purok ${p}`}</option>)}
         </select>
 
         <select value={scoreFilter} onChange={e => setScoreFilter(e.target.value)}
-          className="h-12 px-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl border-none outline-none cursor-pointer min-w-[140px]">
+          style={{height:52,padding:"0 20px",background:"#111827",color:"#fff",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",borderRadius:16,border:"none",outline:"none",cursor:"pointer",minWidth:140}}>
           <option value="All">All Scores</option>
-          <option value="critical">Critical (&lt;60)</option>
+          <option value="critical">Critical (below 60)</option>
           <option value="at_risk">At Risk (60–80)</option>
           <option value="good">Good (80+)</option>
         </select>
 
         <button onClick={() => setShowArchived(p => !p)}
-          className={`h-12 px-5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-            showArchived ? "bg-amber-500 text-white" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
-          {showArchived ? <><User size={13} /> Active</> : <><Archive size={13} /> Archives</>}
+          style={{
+            height:52,padding:"0 24px",borderRadius:16,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",display:"flex",alignItems:"center",gap:10,transition:"all .2s",cursor:"pointer",
+            background:showArchived ? "#f59e0b" : "#f0fdf4",
+            color:showArchived ? "#fff" : "#166534",
+            border:showArchived ? "none" : "1px solid #dcfce7"
+          }}>
+          {showArchived ? <><User size={14} /> Active</> : <><Archive size={14} /> Archives</>}
         </button>
       </div>
 

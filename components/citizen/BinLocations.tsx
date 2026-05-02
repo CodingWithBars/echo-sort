@@ -1,36 +1,55 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import L from "leaflet";
-import { LUPON_CENTER, getDistance } from "@/components/map/MapAssets";
-import BinMarker from "@/components/driver/BinMarker"; // Reuse your existing marker component
-import "leaflet/dist/leaflet.css";
+import { useEffect, useRef, useState, useCallback } from "react";
+import Map, { Marker, MapRef } from "react-map-gl/maplibre";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
-interface Bin {
-  id: number;
-  name: string;
-  lat: number;
-  lng: number;
-  fillLevel: number;
+import { createClient } from "@/utils/supabase/client";
+import { LUPON_CENTER } from "@/components/map/MapAssets";
+import { MapPin, Navigation, Calendar, Info, Layers } from "lucide-react";
+
+const supabase = createClient();
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!;
+
+const MAP_STYLE: any = {
+  version: 8,
+  sources: {
+    "mapbox-sat-streets": {
+      type: "raster",
+      tiles: [`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`],
+      tileSize: 512,
+      attribution: '© Mapbox © OpenStreetMap',
+    },
+  },
+  layers: [
+    { id: "background",        type: "background", paint: { "background-color": "#0f172a" } },
+    { id: "satellite-streets", type: "raster",     source: "mapbox-sat-streets" },
+  ],
+};
+
+function fillColor(level: number): string {
+  if (level >= 90) return "#ef4444";
+  if (level >= 70) return "#f97316";
+  if (level >= 40) return "#eab308";
+  return "#22c55e";
 }
 
-const INITIAL_BINS: Bin[] = [
-  { id: 1, name: "Public Bin - Plaza", lat: 6.89095, lng: 126.02411, fillLevel: 94 },
-  { id: 2, name: "Public Bin - Market", lat: 6.88955, lng: 126.02508, fillLevel: 20 },
-  { id: 3, name: "Community Bin 2", lat: 6.89003, lng: 126.02393, fillLevel: 78 },
-  { id: 4, name: "Community Bin 1", lat: 6.89068, lng: 126.0235, fillLevel: 15 },
-];
-
 export default function BinLocations() {
-  const [bins] = useState<Bin[]>(INITIAL_BINS);
+  const mapRef = useRef<MapRef>(null);
+  const [bins, setBins] = useState<any[]>([]);
   const [userPos, setUserPos] = useState<[number, number] | null>(null);
-  const [selectedBin, setSelectedBin] = useState<Bin | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const [selectedBin, setSelectedBin] = useState<any | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
-    // Get user's current location to show "Nearest Bin"
+    setMounted(true);
+    const fetchBins = async () => {
+      const { data } = await supabase.from("bins").select("*");
+      if (data) setBins(data);
+    };
+    fetchBins();
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserPos([pos.coords.latitude, pos.coords.longitude]),
@@ -39,28 +58,35 @@ export default function BinLocations() {
     }
   }, []);
 
-  if (!isMounted) return null;
+  if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-full w-full bg-white relative">
-      <style dangerouslySetInnerHTML={{ __html: `.leaflet-container { height: 100%; width: 100%; }` }} />
+    <div className="flex flex-col h-full w-full bg-[#0f172a] relative overflow-hidden font-sans">
+      <style>{`
+        .mapboxgl-ctrl-bottom-right, .mapboxgl-ctrl-bottom-left { display: none !important; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.5); opacity: 0; } }
+      `}</style>
 
       {/* --- FLOATING HEADER STATS --- */}
-      <div className="absolute top-4 left-4 right-4 z-[1001] flex gap-2 overflow-x-auto pb-2 no-scrollbar pointer-events-none">
-        <div className="bg-white/90 backdrop-blur-md px-4 py-3 rounded-2xl shadow-xl border border-slate-200 flex items-center gap-3 pointer-events-auto">
-          <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-sm">📍</div>
+      <div className="absolute top-4 left-4 right-4 z-[10] flex gap-3 overflow-x-auto pb-4 no-scrollbar">
+        <div className="bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-[1.5rem] border border-white/10 shadow-2xl flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 bg-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center border border-emerald-500/30">
+            <MapPin size={18} />
+          </div>
           <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Nearby</p>
-            <p className="text-sm font-bold text-slate-900">{bins.length} Collection Points</p>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Nearby</p>
+            <p className="text-sm font-black text-white">{bins.length} Locations</p>
           </div>
         </div>
-        
-        <div className="bg-white/90 backdrop-blur-md px-4 py-3 rounded-2xl shadow-xl border border-slate-200 flex items-center gap-3 pointer-events-auto">
-          <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center text-sm">♻️</div>
+
+        <div className="bg-slate-900/80 backdrop-blur-xl px-5 py-3 rounded-[1.5rem] border border-white/10 shadow-2xl flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center border border-amber-500/30">
+            <Layers size={18} />
+          </div>
           <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Status</p>
-            <p className="text-sm font-bold text-slate-900">
-              {bins.filter(b => b.fillLevel < 80).length} Available
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Status</p>
+            <p className="text-sm font-black text-white">
+              {bins.filter(b => b.fill_level < 80).length} Available
             </p>
           </div>
         </div>
@@ -68,83 +94,102 @@ export default function BinLocations() {
 
       {/* --- THE MAP --- */}
       <div className="flex-1 w-full relative">
-        <MapContainer
-          center={LUPON_CENTER}
-          zoom={17}
-          zoomControl={false}
-          className="z-0"
+        <Map
+          ref={mapRef}
+          mapLib={maplibregl}
+          mapStyle={MAP_STYLE}
+          initialViewState={{
+            longitude: LUPON_CENTER[1],
+            latitude: LUPON_CENTER[0],
+            zoom: 17,
+          }}
+          style={{ width: "100%", height: "100%" }}
         >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-
-          {/* User Location Marker */}
           {userPos && (
-            <Marker 
-              position={userPos} 
-              icon={L.divIcon({
-                html: `<div class="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg ring-4 ring-blue-500/20 animate-pulse"></div>`,
-                className: ""
-              })}
-            />
+            <Marker longitude={userPos[1]} latitude={userPos[0]} anchor="center">
+              <div className="relative w-8 h-8 flex items-center justify-center">
+                <div className="absolute w-full h-full bg-blue-500 rounded-full animate-[pulse_2s_infinite]" />
+                <div className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg z-10" />
+              </div>
+            </Marker>
           )}
 
-          {/* Render Bins using your existing BinMarker or a simplified one */}
           {bins.map((bin) => (
-            <BinMarker
+            <Marker
               key={bin.id}
-              bin={bin}
-              isEditMode={false} // Citizens cannot edit
-              isSelected={selectedBin?.id === bin.id}
-              onClick={() => setSelectedBin(bin)}
-            />
+              longitude={bin.lng}
+              latitude={bin.lat}
+              anchor="bottom"
+              onClick={(e) => { e.originalEvent.stopPropagation(); setSelectedBin(bin); }}
+            >
+              <div className="cursor-pointer group flex flex-col items-center">
+                <div className={`p-2 rounded-2xl border-2 transition-all duration-300 ${selectedBin?.id === bin.id ? "bg-slate-900 border-blue-500 scale-110 shadow-2xl" : "bg-white border-transparent shadow-lg"}`}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: fillColor(bin.fill_level) }} />
+                    <span className={`text-[10px] font-black ${selectedBin?.id === bin.id ? "text-white" : "text-slate-900"}`}>{bin.fill_level}%</span>
+                  </div>
+                </div>
+                <div className={`w-0.5 h-2 mt-0.5 transition-colors ${selectedBin?.id === bin.id ? "bg-blue-500" : "bg-white"}`} />
+              </div>
+            </Marker>
           ))}
-        </MapContainer>
+        </Map>
       </div>
 
-      {/* --- SELECTED BIN INFO PANEL (Citizen View) --- */}
+      {/* --- SELECTED BIN INFO PANEL --- */}
       {selectedBin && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-[1001] animate-in slide-in-from-bottom-10 duration-500">
-          <div className="bg-white rounded-[2rem] p-6 shadow-2xl border border-slate-100">
-            <div className="flex justify-between items-start mb-4">
+        <div className="absolute bottom-6 left-4 right-4 z-[100] animate-in slide-in-from-bottom-10 duration-500">
+          <div className="bg-slate-900/95 backdrop-blur-2xl rounded-[2.5rem] p-7 border border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)]">
+            <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">{selectedBin.name}</h3>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                  {userPos ? `${Math.round(getDistance(userPos, [selectedBin.lat, selectedBin.lng]))}m away from you` : "Collection Station"}
+                <h3 className="text-2xl font-black text-white tracking-tight italic uppercase">{selectedBin.name}</h3>
+                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Active Collection Station
                 </p>
               </div>
               <button 
                 onClick={() => setSelectedBin(null)}
-                className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400"
-              >✕</button>
+                className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-2xl flex items-center justify-center text-slate-400 transition-colors border border-white/10"
+              >
+                <X size={20} />
+              </button>
             </div>
 
-            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl">
-              <div className="flex-1">
-                <div className="flex justify-between mb-1 text-[10px] font-black uppercase tracking-tighter">
-                  <span className={selectedBin.fillLevel > 80 ? "text-red-500" : "text-emerald-500"}>
-                    {selectedBin.fillLevel > 80 ? "Almost Full" : "Ready for disposal"}
-                  </span>
-                  <span className="text-slate-400">{selectedBin.fillLevel}%</span>
-                </div>
-                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-1000 ${selectedBin.fillLevel > 80 ? "bg-red-500" : "bg-emerald-500"}`}
-                    style={{ width: `${selectedBin.fillLevel}%` }}
-                  />
-                </div>
+            <div className="bg-white/5 p-5 rounded-[2rem] border border-white/5 mb-6">
+              <div className="flex justify-between mb-2 items-end">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Current Fill Level</span>
+                <span className="text-xl font-black italic text-white">{selectedBin.fill_level}%</span>
+              </div>
+              <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
+                <div 
+                  className="h-full transition-all duration-1000 rounded-full"
+                  style={{ width: `${selectedBin.fill_level}%`, background: fillColor(selectedBin.fill_level) }}
+                />
               </div>
             </div>
 
-            <button 
-              onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${selectedBin.lat},${selectedBin.lng}`)}
-              className="w-full mt-4 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition-colors shadow-lg shadow-slate-200"
-            >
-              Get Directions
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${selectedBin.lat},${selectedBin.lng}`)}
+                className="flex-1 py-5 bg-white text-slate-900 rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-emerald-400 transition-all shadow-xl flex items-center justify-center gap-3"
+              >
+                <Navigation size={18} />
+                Get Directions
+              </button>
+            </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function X({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"></line>
+      <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
   );
 }

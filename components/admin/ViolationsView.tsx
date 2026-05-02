@@ -31,9 +31,9 @@ interface Violation {
 }
 
 const STATUS_CFG = {
-  "Pending":      { bg: "bg-red-50",    text: "text-red-700",    border: "border-red-200",    dot: "bg-red-500"    },
-  "Under Review": { bg: "bg-amber-50",  text: "text-amber-700",  border: "border-amber-200",  dot: "bg-amber-500"  },
-  "Resolved":     { bg: "bg-emerald-50",text: "text-emerald-700",border: "border-emerald-200",dot: "bg-emerald-500"},
+  "Pending":      { bg: "bg-[#fef2f2]", text: "text-[#991b1b]", border: "border-[#fecaca]", dot: "bg-[#ef4444]" },
+  "Under Review": { bg: "bg-[#fffbeb]", text: "text-[#92400e]", border: "border-[#fef3c7]", dot: "bg-[#f59e0b]" },
+  "Resolved":     { bg: "bg-[#f0fdf4]", text: "text-[#166534]", border: "border-[#dcfce7]", dot: "bg-[#10b981]" },
 };
 
 async function loadScope(): Promise<JurisdictionScope> {
@@ -213,16 +213,19 @@ export default function ViolationsView() {
     <div className="space-y-6 pb-20">
       {/* ── JURISDICTION BADGE ── */}
       {(scope.municipality || scope.barangay) && (
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full">
-            <Building2 size={12} className="text-emerald-600" />
-            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
-              {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
-            </span>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:16,padding:"0 4px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:100}}>
+              <Building2 size={12} style={{color:"#1c4532"}} />
+              <span style={{fontSize:10,fontWeight:800,color:"#1c4532",textTransform:"uppercase",letterSpacing:".05em"}}>
+                {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
+              </span>
+            </div>
           </div>
           <button onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200">
-            <Plus size={13} /> Report Incident
+            style={{padding:"12px 24px",background:"#ef4444",color:"#fff",borderRadius:14,border:"none",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}
+            className="hover:opacity-90 shadow-sm shadow-red-100">
+            <Plus size={16} /> Report Violation
           </button>
         </div>
       )}
@@ -250,36 +253,51 @@ export default function ViolationsView() {
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="flex flex-col md:flex-row gap-4">
+        <div style={{position:"relative",flex:1}}>
+          <Search size={16} style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",color:"#9ca3af"}} />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search resident, type, barangay…"
-            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-400 focus:ring-2 ring-emerald-400/10 transition-all placeholder:text-slate-300 uppercase tracking-wide" />
+            placeholder="Search violations by resident or type…"
+            style={{width:"100%",height:52,paddingLeft:48,paddingRight:20,background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,fontSize:14,color:"#111827",outline:"none"}}
+            className="focus:border-[#1c4532] transition-all" />
         </div>
-        <div className="flex bg-white border border-slate-200 p-1 rounded-xl gap-1 h-12">
+        <div style={{display:"flex",background:"#fff",border:"1px solid #e5e7eb",padding:6,borderRadius:16,gap:4,height:52}}>
           <button onClick={() => setViewMode("active")}
-            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "active" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "active" ? "#1c4532" : "transparent",
+              color:viewMode === "active" ? "#fff" : "#6b7280"
+            }}>
             Active
           </button>
           <button onClick={() => setViewMode("archived")}
-            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "archived" ? "bg-slate-900 text-white" : "text-slate-400"}`}>
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "archived" ? "#111827" : "transparent",
+              color:viewMode === "archived" ? "#fff" : "#6b7280"
+            }}>
             Archived
           </button>
         </div>
         <button onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
-          className="h-12 px-4 bg-white border border-slate-200 rounded-xl flex items-center gap-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-all">
-          <ArrowUpDown size={13} className="text-emerald-500" />
+          style={{height:52,padding:"0 24px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,display:"flex",alignItems:"center",gap:10,fontSize:11,fontWeight:800,color:"#111827",textTransform:"uppercase",letterSpacing:".05em",cursor:"pointer"}}
+          className="hover:border-[#1c4532]">
+          <ArrowUpDown size={14} style={{color:"#10b981"}} />
           {sortOrder === "desc" ? "Newest" : "Oldest"}
         </button>
       </div>
 
       {viewMode === "active" && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-3 flex-wrap">
           {["All", "Pending", "Under Review", "Resolved"].map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all
-                ${statusFilter === s ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-slate-200 text-slate-400 hover:border-emerald-300"}`}>
+              style={{
+                padding:"8px 20px",borderRadius:100,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",transition:"all .2s",cursor:"pointer",
+                background:statusFilter === s ? "#1c4532" : "#fff",
+                color:statusFilter === s ? "#fff" : "#6b7280",
+                border:`1px solid ${statusFilter === s ? "#1c4532" : "#e5e7eb"}`
+              }}
+              className="hover:border-[#1c4532]">
               {s}
             </button>
           ))}

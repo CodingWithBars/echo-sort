@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import {
   MapPin, Calendar, TrendingUp, Flag, Bell, LogOut, Menu, X,
   CheckCircle, AlertTriangle, Info, Trash2, Megaphone,
-  Shield, FileText, Search,
+  Shield, FileText, Search, ChevronRight,
 } from "lucide-react";
 import CitizenProfileViewInner from "@/components/citizen/CitizenProfileView";
 
@@ -37,7 +37,25 @@ interface Broadcast   { id: string; title: string; body: string; type: string; i
 interface Notif       { id: string; type: string; title: string; body: string; is_read: boolean; created_at: string; }
 interface CitizenPeer { id: string; full_name: string; purok: string; }
 
-// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+// ── THEME & CONSTANTS ─────────────────────────────────────────────────────────
+
+const THEME = {
+  bg: "#f4f7f5",
+  surface: "#ffffff",
+  primary: "#1c4532",
+  primaryHover: "#2d5a45",
+  text: "#111827",
+  textMuted: "#6b7280",
+  border: "#e5e7eb",
+  accent: "#f0fdf4"
+};
+
+const SLIDE_IN_STYLE = `
+  @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  @keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+`;
 
 const SDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const VIOLATION_TYPES = [
@@ -46,17 +64,17 @@ const VIOLATION_TYPES = [
   "Prohibited Area Dumping","Hazardous Waste Mishandling",
 ];
 const STATUS_CFG: Record<string,{dot:string;badge:string}> = {
-  Pending:        {dot:"bg-amber-400",   badge:"bg-amber-50 text-amber-800 border-amber-200"},
-  "Under Review": {dot:"bg-blue-400",    badge:"bg-blue-50 text-blue-800 border-blue-200"},
-  Resolved:       {dot:"bg-emerald-500", badge:"bg-emerald-50 text-emerald-800 border-emerald-200"},
+  Pending:        {dot:"#f59e0b", badge:`${THEME.accent} text-amber-800 border-amber-200`},
+  "Under Review": {dot:"#3b82f6", badge:"bg-blue-50 text-blue-800 border-blue-200"},
+  Resolved:       {dot:THEME.primary, badge:`${THEME.accent} text-[#1c4532] border-emerald-200`},
 };
 const BROADCAST_ICON: Record<string,string> = {
   AWARENESS:"🌿", SCHEDULE_CHANGE:"📅", NOTICE:"📋", WARNING:"⚠️", EVENT:"🎪",
 };
 
-const scoreHex   = (s:number) => s>=90?"#059669":s>=70?"#16a34a":s>=50?"#d97706":s>=30?"#ea580c":"#dc2626";
-const scoreColor = (s:number) => s>=90?"text-emerald-600":s>=70?"text-green-600":s>=50?"text-amber-500":s>=30?"text-orange-500":"text-red-600";
-const scoreBg    = (s:number) => s>=90?"bg-emerald-50 border-emerald-200":s>=70?"bg-green-50 border-green-200":s>=50?"bg-amber-50 border-amber-200":"bg-red-50 border-red-200";
+const scoreHex   = (s:number) => s>=90?THEME.primary:s>=70?"#16a34a":s>=50?"#d97706":s>=30?"#ea580c":"#dc2626";
+const scoreColor = (s:number) => s>=90?"text-[#1c4532]":s>=70?"text-green-600":s>=50?"text-amber-500":s>=30?"text-orange-500":"text-red-600";
+const scoreBg    = (s:number) => s>=90?`${THEME.accent} border-emerald-200`:s>=70?"bg-green-50 border-green-200":s>=50?"bg-amber-50 border-amber-100":"bg-red-50 border-red-200";
 const scoreTier  = (s:number) => s>=90?"Excellent":s>=70?"Good":s>=50?"Fair":s>=30?"Poor":"Critical";
 
 const timeAgo = (iso:string) => {
@@ -84,8 +102,8 @@ function ScoreRing({score,size=120}:{score:number;size?:number}) {
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth="7"
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
         style={{transform:"rotate(-90deg)",transformOrigin:"50% 50%",transition:"stroke-dasharray .6s ease"}}/>
-      <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="900" fill={col} fontFamily="Georgia,serif">{score}</text>
-      <text x="50" y="60" textAnchor="middle" fontSize="9"  fontWeight="700" fill="#9ca3af" fontFamily="sans-serif">/ 100</text>
+      <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="900" fill={col} fontFamily="inherit">{score}</text>
+      <text x="50" y="60" textAnchor="middle" fontSize="9"  fontWeight="700" fill={THEME.textMuted} fontFamily="inherit">/ 100</text>
     </svg>
   );
 }
@@ -94,19 +112,19 @@ function ScoreRing({score,size=120}:{score:number;size?:number}) {
 
 function LogoutModal({onConfirm,onCancel,loading}:{onConfirm:()=>void;onCancel:()=>void;loading:boolean}) {
   return (
-    <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={()=>!loading&&onCancel()}/>
-      <div className="relative w-full max-w-sm bg-white rounded-[3.5rem] p-10 shadow-2xl text-center animate-in zoom-in-95 duration-200">
-        <span className="text-5xl block mb-6">♻️</span>
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2 uppercase italic">End Session?</h2>
-        <p className="text-sm text-slate-500 mb-8 font-medium italic">Your contribution today helped make our barangay a little cleaner.</p>
-        <div className="space-y-3">
-          <button onClick={onConfirm} disabled={loading}
-            className="w-full py-5 bg-emerald-600 text-white rounded-[1.5rem] font-black text-xs uppercase shadow-lg shadow-emerald-100 active:scale-95 transition-all disabled:opacity-60">
-            {loading?"Signing out…":"Confirm & Logout"}
+    <div style={{position:"fixed",inset:0,zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"rgba(0,0,0,.3)",backdropFilter:"blur(4px)"}}>
+      <div style={{background:"#fff",borderRadius:32,padding:40,width:"100%",maxWidth:400,textAlign:"center",boxShadow:"0 20px 50px rgba(0,0,0,0.1)",animation:"slideInUp .3s ease-out"}}>
+        <style>{SLIDE_IN_STYLE}</style>
+        <div style={{width:64,height:64,borderRadius:22,background:"#fef2f2",color:"#ef4444",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}>
+          <LogOut size={32}/>
+        </div>
+        <h2 style={{fontSize:24,fontWeight:900,color:THEME.text,marginBottom:8,letterSpacing:"-.02em"}}>Sign Out?</h2>
+        <p style={{fontSize:14,color:THEME.textMuted,marginBottom:32}}>You're about to end your citizen session. See you back soon!</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <button onClick={onConfirm} disabled={loading} style={{width:"100%",padding:"16px",borderRadius:16,background:THEME.primary,color:"#fff",border:"none",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:`0 10px 20px ${THEME.primary}25`}}>
+            {loading?"Signing out…":"Yes, Sign Out"}
           </button>
-          <button onClick={onCancel}
-            className="w-full py-5 bg-slate-100 text-slate-600 rounded-[1.5rem] font-black text-xs uppercase active:scale-95 transition-all">
+          <button onClick={onCancel} disabled={loading} style={{width:"100%",padding:"16px",borderRadius:16,background:"#f3f4f6",color:THEME.text,border:"none",fontSize:14,fontWeight:700,cursor:"pointer"}}>
             Stay Active
           </button>
         </div>
@@ -205,31 +223,31 @@ function ReportModal({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}
       <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
 
         {/* Header */}
-        <div className="bg-emerald-50 border-b border-emerald-100 px-8 py-6 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-red-100 rounded-[1.2rem] flex items-center justify-center">
-              <Flag size={20} className="text-red-600"/>
+        <div style={{ background: THEME.accent, borderBottom: `1px solid ${THEME.border}`, padding: "24px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 16, background: "#fee2e2", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Flag size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 uppercase italic tracking-tight">Report a Violation</h3>
-              <p className="text-xs text-emerald-600 font-black uppercase tracking-widest">Identity kept confidential</p>
+              <h3 style={{ fontSize: 18, fontWeight: 900, color: THEME.text, margin: 0, letterSpacing: "-.02em" }}>REPORT A VIOLATION</h3>
+              <p style={{ fontSize: 11, fontWeight: 800, color: THEME.primary, textTransform: "uppercase", margin: 0, letterSpacing: ".05em" }}>Identity kept confidential</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all">
-            <X size={16} className="text-slate-500"/>
+          <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 12, background: "#fff", border: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={18} color={THEME.textMuted} />
           </button>
         </div>
 
         {success?(
           <div className="p-10 text-center">
-            <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <CheckCircle size={36} className="text-emerald-600"/>
+            <div className={`w-20 h-20 ${THEME.accent} rounded-full flex items-center justify-center mx-auto mb-6`}>
+              <CheckCircle size={36} className={`text-[${THEME.primary}]`}/>
             </div>
             <h3 className="text-2xl font-black text-slate-900 uppercase italic mb-3">Report Submitted!</h3>
             <p className="text-sm text-slate-500 mb-8 leading-relaxed">
               Your report has been submitted to your LGU officer for review. Your identity is kept confidential — the reported citizen will not know who filed this.
             </p>
-            <button onClick={onClose} className="px-8 py-4 bg-emerald-600 text-white rounded-[1.5rem] font-black text-xs uppercase shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all">
+            <button onClick={onClose} style={{ background: THEME.primary }} className="px-8 py-4 text-white rounded-[1.5rem] font-black text-xs uppercase shadow-lg shadow-emerald-100 hover:opacity-90 transition-all">
               Done
             </button>
           </div>
@@ -399,19 +417,25 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
   const iconFor=(type:string)=>{
     if (type==="WARNING_ISSUED")    return <AlertTriangle size={13} className="text-amber-500"/>;
     if (type==="VIOLATION_FILED")   return <AlertTriangle size={13} className="text-red-500"/>;
-    if (type==="BROADCAST")         return <Megaphone size={13} className="text-emerald-600"/>;
-    if (type==="VIOLATION_RESOLVED")return <CheckCircle size={13} className="text-emerald-600"/>;
+    if (type==="BROADCAST")         return <Megaphone size={13} className={`text-[${THEME.primary}]`}/>;
+    if (type==="VIOLATION_RESOLVED")return <CheckCircle size={13} className={`text-[${THEME.primary}]`}/>;
     return <Info size={13} className="text-blue-500"/>;
   };
   return (
-    <div className="absolute top-[calc(100%+12px)] right-0 w-80 bg-white rounded-[2rem] border border-slate-100 shadow-2xl z-[400] overflow-hidden animate-in slide-in-from-top-2 duration-200">
-      <div className="flex items-center justify-between px-5 py-4 bg-slate-50 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <span className="font-black text-slate-900 text-sm uppercase italic">Notifications</span>
-          {unread>0&&<span className="text-[10px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full">{unread}</span>}
+    <div style={{
+      position: "absolute", top: "calc(100% + 12px)", right: 0, width: 320,
+      background: "#fff", borderRadius: 24, border: `1px solid ${THEME.border}`,
+      boxShadow: "0 20px 50px rgba(0,0,0,0.1)", zIndex: 1100, overflow: "hidden",
+      animation: "slideInUp .2s ease-out"
+    }}>
+      <style>{SLIDE_IN_STYLE}</style>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", background: THEME.accent, borderBottom: `1px solid ${THEME.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: THEME.text, textTransform: "uppercase" }}>Notifications</span>
+          {unread > 0 && <span style={{ fontSize: 10, fontWeight: 800, background: "#ef4444", color: "#fff", padding: "2px 8px", borderRadius: 10 }}>{unread}</span>}
         </div>
-        <button onClick={onClose} className="w-7 h-7 rounded-xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-100 transition-all">
-          <X size={12} className="text-slate-500"/>
+        <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: "#fff", border: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <X size={12} color={THEME.textMuted} />
         </button>
       </div>
       <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-50">
@@ -419,9 +443,9 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
           <div className="py-10 text-center text-slate-400 text-sm font-medium italic">No notifications yet</div>
         ):notifs.map(n=>(
           <div key={n.id} onClick={()=>onRead(n.id)}
-            className={`flex gap-3 items-start p-4 cursor-pointer transition-colors hover:bg-slate-50 ${!n.is_read?"bg-emerald-50/50":""}`}>
+            className={`flex gap-3 items-start p-4 cursor-pointer transition-colors hover:bg-slate-50 ${!n.is_read?`${THEME.accent}70`:""}`}>
             <div className={`w-8 h-8 rounded-2xl flex items-center justify-center flex-shrink-0 ${
-              n.type==="WARNING_ISSUED"?"bg-amber-50":n.type==="VIOLATION_FILED"?"bg-red-50":"bg-emerald-50"}`}>
+              n.type==="WARNING_ISSUED"?"bg-amber-50":n.type==="VIOLATION_FILED"?"bg-red-50":THEME.accent}`}>
               {iconFor(n.type)}
             </div>
             <div className="flex-1 min-w-0">
@@ -429,7 +453,7 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
               <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
             </div>
-            {!n.is_read&&<div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 mt-1.5"/>}
+            {!n.is_read&&<div className={`w-2 h-2 rounded-full bg-[${THEME.primary}] flex-shrink-0 mt-1.5`}/>}
           </div>
         ))}
       </div>
@@ -438,51 +462,24 @@ function NotifPanel({notifs,onRead,onClose}:{notifs:Notif[];onRead:(id:string)=>
 }
 
 // ── CITIZEN PROFILE PANEL ─────────────────────────────────────────────────────
-// Slides in from right, top:80px (below h-20 topnav).
-// Wraps CitizenProfileView in a panel shell — no redundant stats shown.
-// Citizen-focused: eco score, barangay, purok, avatar upload, account edit.
 
 function CitizenProfilePanel({profile,onClose}:{profile:CitizenProfile;onClose:()=>void}) {
-  const SLIDE = `@keyframes slideInRight{from{transform:translateX(100%)}to{transform:translateX(0)}}`;
   return (
     <>
-      {/* Backdrop */}
-      <div onClick={onClose} className="fixed inset-0 z-[700] bg-black/25 backdrop-blur-sm"/>
-
-      {/* Panel — top:80px clears the h-20 header */}
+      <style>{`
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      `}</style>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(12px)", zIndex: 3000 }} />
       <div style={{
-        position:"fixed",top:80,right:0,bottom:0,zIndex:800,
-        width:"min(480px,100vw)",background:"#fff",
-        boxShadow:"-8px 0 48px rgba(0,0,0,.15)",
-        display:"flex",flexDirection:"column",
-        animation:"slideInRight .25s cubic-bezier(.4,0,.2,1) both",
-        fontFamily:"sans-serif",
+        position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 3001,
+        width: "min(480px, 100vw)", background: "#fff",
+        boxShadow: "-12px 0 50px rgba(0,0,0,0.15)",
+        display: "flex", flexDirection: "column",
+        animation: "slideInRight .4s cubic-bezier(0.16, 1, 0.3, 1) both",
+        fontFamily: "sans-serif",
+        overflow: "hidden"
       }}>
-        <style>{SLIDE}</style>
-
-        {/* Header bar */}
-        <div className="flex items-center justify-between px-6 py-5 bg-emerald-50 border-b border-emerald-100 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-              {profile.avatar_url
-                ?<img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover"/>
-                :<span className="font-black text-white italic text-base">{profile.full_name.charAt(0)}</span>
-              }
-            </div>
-            <div>
-              <p className="text-sm font-black text-slate-900 uppercase italic">{profile.full_name}</p>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">{profile.barangay} · {profile.purok}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all">
-            <X size={15} className="text-slate-500"/>
-          </button>
-        </div>
-
-        {/* CitizenProfileView handles its own data fetch + all editing */}
-        <div className="flex-1 overflow-y-auto">
-          <CitizenProfileViewInner/>
-        </div>
+        <CitizenProfileViewInner userId={profile.id} onClose={onClose} />
       </div>
     </>
   );
@@ -571,135 +568,140 @@ export default function CitizenDashboard() {
   const currentLabel=menuItems.find(m=>m.id===activeTab)?.label ?? "Dashboard";
 
   if (loading) return (
-    <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"/>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Syncing Profile…</p>
+    <div style={{ height: "100vh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: THEME.bg }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <div style={{ width: 48, height: 48, borderRadius: "50%", border: `4px solid ${THEME.primary}20`, borderTopColor: THEME.primary, animation: "spin 1s linear infinite" }} />
+        <style>{SLIDE_IN_STYLE}</style>
+        <p style={{ fontSize: 11, fontWeight: 800, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: ".15em" }}>Syncing Profile…</p>
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden">
+    <div style={{ display: "flex", height: "100vh", width: "100%", background: THEME.bg, fontFamily: "sans-serif", position: "relative", overflow: "hidden" }}>
 
       {/* ── SIDEBAR ── */}
-      <aside className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen?"translate-x-0 shadow-2xl":"-translate-x-full"}`}>
+      <aside style={{
+        width: 280, background: "#fff", borderRight: `1px solid ${THEME.border}`,
+        display: "flex", flexDirection: "column", zIndex: 1010,
+        transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+      }} className={`${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} fixed lg:static inset-y-0 left-0 shadow-2xl lg:shadow-none`}>
 
-        <div className="p-8 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-600 rounded-[1.2rem] flex items-center justify-center shadow-xl shadow-emerald-100">
-              <Trash2 size={20} className="text-white"/>
+        <div style={{ padding: "32px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 44, height: 44, background: THEME.primary, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 20px ${THEME.primary}20` }}>
+              <Trash2 size={20} color="#fff" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight italic">EcoRoute</h1>
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{profile?.barangay}</p>
+              <h1 style={{ fontSize: 20, fontWeight: 900, color: THEME.text, margin: 0, letterSpacing: "-.02em" }}>EcoRoute</h1>
+              <p style={{ fontSize: 10, fontWeight: 800, color: THEME.primary, textTransform: "uppercase", margin: 0, letterSpacing: ".05em" }}>{profile?.barangay}</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto">
-          <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic opacity-70">Citizen Portal</p>
-          {menuItems.map(item=>(
-            <button key={item.id}
-              onClick={()=>{setActiveTab(item.id);setSidebarOpen(false);}}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 ${
-                activeTab===item.id
-                  ?"bg-emerald-600 text-white shadow-lg shadow-emerald-100 font-bold"
-                  :"text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"}`}>
-              <span className="text-xl">{item.icon}</span>
-              <span className="text-sm font-black uppercase tracking-tight">{item.label}</span>
-            </button>
-          ))}
+        <nav style={{ flex: 1, padding: "0 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+          <p style={{ padding: "0 16px", fontSize: 10, fontWeight: 800, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: ".15em", marginBottom: 12 }}>Citizen Portal</p>
+          {menuItems.map(item => {
+            const isActive = activeTab === item.id;
+            return (
+              <button key={item.id}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "14px 16px", borderRadius: 16, border: "none",
+                  background: isActive ? THEME.accent : "transparent",
+                  color: isActive ? THEME.primary : THEME.textMuted,
+                  cursor: "pointer", transition: "all 0.2s"
+                }}
+                className="hover:bg-slate-50 group"
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <span style={{ fontSize: 20, filter: isActive ? "none" : "grayscale(100%) opacity(0.5)" }}>{item.icon}</span>
+                  <span style={{ fontSize: 15, fontWeight: isActive ? 800 : 600, letterSpacing: "-.01em" }}>{item.label}</span>
+                </div>
+                <ChevronRight size={14} style={{ opacity: isActive ? 0.8 : 0.3, transform: isActive ? "translateX(0)" : "translateX(-4px)", transition: "all 0.2s" }} className="group-hover:translate-x-0" />
+              </button>
+            );
+          })}
 
-          {/* Report button */}
-          <button onClick={()=>{setShowReport(true);setSidebarOpen(false);}}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-[2rem] transition-all duration-300 text-red-400 hover:bg-red-50 hover:text-red-600 mt-2">
-            <Flag size={20}/>
-            <span className="text-sm font-black uppercase tracking-tight">Report Violation</span>
+          <button onClick={() => { setShowReport(true); setSidebarOpen(false); }}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderRadius: 16, border: "none", background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 15, fontWeight: 700, marginTop: 12 }}
+            className="hover:bg-red-50 group"
+          >
+            <Flag size={20} />
+            <span>Report Violation</span>
           </button>
         </nav>
 
-        {/* Score pill in sidebar */}
-        <div className="px-6 mb-3">
-          <div className={`flex items-center justify-between px-5 py-3 rounded-[2rem] border ${scoreBg(currentScore)}`}>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Eco Score</p>
-              <p className={`text-2xl font-black italic ${scoreColor(currentScore)}`}>{currentScore}</p>
+        {/* Sidebar Footer (Score & Logout) */}
+        <div style={{ padding: "24px", marginTop: "auto" }}>
+          <div style={{ background: THEME.accent, borderRadius: 28, padding: "20px 24px", border: `1px solid ${THEME.primary}10`, marginBottom: 16 }}>
+            <p style={{ fontSize: 11, fontWeight: 900, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: ".15em", marginBottom: 8 }}>Eco Score</p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <p style={{ fontSize: 32, fontWeight: 900, color: THEME.primary, margin: 0, letterSpacing: "-.04em" }}>{currentScore}</p>
+              <span style={{ fontSize: 10, fontWeight: 900, color: THEME.primary, background: "#fff", padding: "6px 12px", borderRadius: 12, border: `1px solid ${THEME.primary}20`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>{scoreTier(currentScore)}</span>
             </div>
-            <span className={`text-xs font-black uppercase px-3 py-1 rounded-full border ${scoreBg(currentScore)} ${scoreColor(currentScore)}`}>
-              {scoreTier(currentScore)}
-            </span>
           </div>
-        </div>
-
-        <div className="p-6 shrink-0">
-          <button onClick={()=>setShowLogout(true)}
-            className="w-full py-4 rounded-[2rem] bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all font-black text-xs uppercase tracking-widest border border-slate-100">
-            Sign Out
+          <button onClick={() => setShowLogout(true)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderRadius: 16, border: "none", background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 15, fontWeight: 700 }} className="hover:bg-red-50">
+            <LogOut size={20} />
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
 
       {/* Sidebar overlay */}
-      {isSidebarOpen&&<div className="fixed inset-0 bg-black/30 z-[2000] lg:hidden" onClick={()=>setSidebarOpen(false)}/>}
+      {isSidebarOpen&&<div className="fixed inset-0 bg-black/30 z-[1000] lg:hidden" onClick={()=>setSidebarOpen(false)}/>}
 
       {/* ── MAIN ── */}
-      <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", position: "relative", overflow: "hidden" }}>
 
         {/* Header */}
-        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 lg:px-10 shrink-0 z-[1002]">
-          <div className="flex items-center gap-4">
-            <button onClick={()=>setSidebarOpen(true)} className="lg:hidden p-3 bg-slate-50 text-slate-600 rounded-2xl border border-slate-100">
-              <Menu size={18}/>
+        <header style={{ height: 80, background: "rgba(255,255,255,0.8)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", flexShrink: 0, zIndex: 1001 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden" style={{ width: 40, height: 40, borderRadius: 12, background: "#fff", border: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <Menu size={20} />
             </button>
             <div>
-              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-0.5">
+              <p style={{ fontSize: 10, fontWeight: 800, color: THEME.primary, textTransform: "uppercase", letterSpacing: ".2em", marginBottom: 2 }}>
                 {profile?.barangay}, {profile?.municipality}
               </p>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight uppercase italic">{currentLabel}</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 900, color: THEME.text, margin: 0, textTransform: "uppercase", letterSpacing: "-.02em" }}>{currentLabel}</h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {/* Notification bell */}
-            <div ref={notifRef} className="relative">
-              <button onClick={()=>setNotifOpen(o=>!o)}
-                className={`w-10 h-10 rounded-2xl border flex items-center justify-center transition-all relative ${notifOpen?"bg-emerald-50 border-emerald-200":"bg-white border-slate-100 hover:border-emerald-200"}`}>
-                <Bell size={17} className={notifOpen?"text-emerald-600":"text-slate-500"}/>
-                {unreadC>0&&<span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">{unreadC>9?"9+":unreadC}</span>}
+            <div ref={notifRef} style={{ position: "relative" }}>
+              <button onClick={() => setNotifOpen(!notifOpen)}
+                style={{
+                  width: 44, height: 44, borderRadius: 14, border: `1px solid ${THEME.border}`,
+                  background: notifOpen ? THEME.accent : "#fff",
+                  display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+              >
+                <Bell size={20} color={notifOpen ? THEME.primary : THEME.text} />
+                {unreadC > 0 && <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: "#ef4444", border: "2px solid #fff", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{unreadC > 9 ? "9+" : unreadC}</span>}
               </button>
-              {notifOpen&&<NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)}/>}
+              {notifOpen && <NotifPanel notifs={notifs} onRead={markRead} onClose={() => setNotifOpen(false)} />}
             </div>
 
-            {/* ── PROFILE BADGE — clicking opens CitizenProfileView ── */}
+            {/* Profile badge */}
             <button
-              onClick={()=>setShowProfile(true)}
-              className={`flex items-center gap-3 p-1.5 pr-1 md:pr-5 rounded-[1.8rem] border transition-all duration-300 ${
-                showProfile
-                  ?"bg-slate-950 border-slate-900 shadow-xl"
-                  :"bg-white border-slate-100 hover:border-emerald-200 hover:bg-slate-50 shadow-sm"}`}
+              onClick={() => setShowProfile(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "6px 6px 6px 16px",
+                borderRadius: 20, background: showProfile ? THEME.text : "#fff",
+                border: `1px solid ${showProfile ? THEME.text : THEME.border}`,
+                cursor: "pointer", transition: "all 0.2s"
+              }}
             >
-              {/* Avatar */}
-              <div className={`w-9 h-9 md:w-11 md:h-11 rounded-2xl flex items-center justify-center overflow-hidden border transition-all duration-300 ${showProfile?"border-emerald-500/50 scale-105":"border-slate-200"}`}>
-                {profile?.avatar_url?(
-                  <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
-                ):(
-                  <div className="w-full h-full bg-emerald-600 flex items-center justify-center">
-                    <span className="font-black text-white italic text-base">{(profile?.full_name??"C").charAt(0)}</span>
-                  </div>
-                )}
+              <div style={{ textAlign: "right" }} className="hidden md:block">
+                <p style={{ fontSize: 13, fontWeight: 800, color: showProfile ? "#fff" : THEME.text, lineHeight: 1 }}>{profile?.full_name ?? "Citizen"}</p>
+                <p style={{ fontSize: 10, fontWeight: 600, color: showProfile ? THEME.primary : THEME.primary, marginTop: 4, textTransform: "uppercase", letterSpacing: ".02em" }}>{profile?.purok}</p>
               </div>
-              {/* Name + status */}
-              <div className="text-left hidden md:block">
-                <p className={`text-[11px] font-black uppercase tracking-tight transition-colors duration-300 ${showProfile?"text-white":"text-slate-900"}`}>
-                  {profile?.full_name??"Valued Citizen"}
-                </p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
-                  <p className={`text-[8px] font-bold uppercase tracking-[0.15em] ${showProfile?"text-emerald-400/80":"text-slate-400"}`}>
-                    {profile?.purok} • Authorized
-                  </p>
-                </div>
+              <div style={{ width: 38, height: 38, borderRadius: 12, background: profile?.avatar_url ? "#f1f5f9" : THEME.primary, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", border: `1px solid ${THEME.border}` }}>
+                {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 14, fontWeight: 900, color: "#fff" }}>{profile?.full_name.charAt(0)}</span>}
               </div>
             </button>
           </div>
@@ -720,7 +722,7 @@ export default function CitizenDashboard() {
             <div className="max-w-3xl mx-auto p-6 lg:p-10 space-y-6 animate-in slide-in-from-bottom-4 duration-500">
               <div>
                 <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">Collection Schedule</h2>
-                <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">
+                <p className={`text-sm ${scoreColor(100)} font-black uppercase tracking-widest mt-1`}>
                   Barangay {profile?.barangay} · {schedules.length} active route{schedules.length!==1?"s":""}
                 </p>
               </div>
@@ -731,9 +733,9 @@ export default function CitizenDashboard() {
                   const has=schedules.some(s=>s.day_of_week===i);
                   const isToday=i===new Date().getDay();
                   return (
-                    <div key={i} className={`flex-shrink-0 w-14 rounded-[1.5rem] py-3 text-center border transition-all ${isToday?"bg-emerald-600 border-emerald-600 shadow-lg shadow-emerald-100":has?"bg-emerald-50 border-emerald-200":"bg-white border-slate-100"}`}>
-                      <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isToday?"text-emerald-100":has?"text-emerald-600":"text-slate-300"}`}>{d}</p>
-                      <div className={`w-2 h-2 rounded-full mx-auto ${isToday?"bg-white":has?"bg-emerald-400":"bg-slate-200"}`}/>
+                    <div key={i} className={`flex-shrink-0 w-14 rounded-[1.5rem] py-3 text-center border transition-all ${isToday?`bg-[${THEME.primary}] border-[${THEME.primary}] shadow-lg shadow-slate-200`:has?`${THEME.accent} border-slate-200`:"bg-white border-slate-100"}`}>
+                      <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isToday?"text-white":has?`text-[${THEME.primary}]`:"text-slate-300"}`}>{d}</p>
+                      <div className={`w-2 h-2 rounded-full mx-auto ${isToday?"bg-white":has?`bg-[${THEME.primary}]`:"bg-slate-200"}`}/>
                     </div>
                   );
                 })}
@@ -748,36 +750,36 @@ export default function CitizenDashboard() {
                 const isToday=s.day_of_week===new Date().getDay();
                 const isTomorrow=s.day_of_week===(new Date().getDay()+1)%7;
                 return (
-                  <div key={s.id} className={`bg-white rounded-[2.5rem] border p-6 flex gap-5 items-start shadow-sm ${isToday?"border-emerald-300 shadow-emerald-100 shadow-md":"border-slate-100"}`}>
-                    <div className={`w-14 h-14 rounded-[1.5rem] flex flex-col items-center justify-center flex-shrink-0 ${isToday?"bg-emerald-600 shadow-lg shadow-emerald-100":"bg-emerald-50"}`}>
-                      <span className={`text-xs font-black uppercase ${isToday?"text-white":"text-emerald-700"}`}>{s.day_of_week!==null?SDAYS[s.day_of_week]:"—"}</span>
-                      <span className={`text-[9px] font-bold mt-0.5 ${isToday?"text-emerald-100":"text-emerald-500"}`}>{fmtTime(s.scheduled_time)}</span>
+                  <div key={s.id} className={`bg-white rounded-[2.5rem] border p-6 flex gap-5 items-start shadow-sm ${isToday?`border-[${THEME.primary}]30 shadow-slate-200 shadow-md`:"border-slate-100"}`}>
+                    <div className={`w-14 h-14 rounded-[1.5rem] flex flex-col items-center justify-center flex-shrink-0 ${isToday?`bg-[${THEME.primary}] shadow-lg shadow-slate-200`:THEME.accent}`}>
+                      <span className={`text-xs font-black uppercase ${isToday?"text-white":`text-[${THEME.primary}]`}`}>{s.day_of_week!==null?SDAYS[s.day_of_week]:"—"}</span>
+                      <span className={`text-[9px] font-bold mt-0.5 ${isToday?"text-white/80":`text-[${THEME.primary}]`}`}>{fmtTime(s.scheduled_time)}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-3">
                         <span className="font-black text-slate-900 italic uppercase tracking-tight">{s.label}</span>
-                        {isToday&&<span className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 uppercase tracking-widest">Today</span>}
+                        {isToday&&<span className={`text-[10px] font-black px-3 py-1 rounded-full ${THEME.accent} text-[${THEME.primary}] uppercase tracking-widest`}>Today</span>}
                         {isTomorrow&&!isToday&&<span className="text-[10px] font-black px-3 py-1 rounded-full bg-amber-50 text-amber-700 uppercase tracking-widest border border-amber-200">Tomorrow</span>}
                       </div>
                       <div className="flex gap-2 flex-wrap mb-2">
                         {s.waste_types.map(t=>(
-                          <span key={t} className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-widest">{t}</span>
+                          <span key={t} className={`text-[10px] font-black px-3 py-1 rounded-full ${THEME.accent} text-[${THEME.primary}] border border-slate-100 uppercase tracking-widest`}>{t}</span>
                         ))}
                       </div>
                       {s.notes&&<p className="text-xs text-slate-500 leading-relaxed">{s.notes}</p>}
                     </div>
-                    {isToday&&<div className="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0 mt-1 animate-pulse"/>}
+                    {isToday&&<div className={`w-2.5 h-2.5 rounded-full bg-[${THEME.primary}] flex-shrink-0 mt-1 animate-pulse`}/>}
                   </div>
                 );
               })}
 
-              <div className="bg-emerald-900 rounded-[2rem] p-6 flex gap-4 items-start">
-                <div className="w-10 h-10 rounded-[1rem] bg-emerald-800 flex items-center justify-center flex-shrink-0">
-                  <FileText size={18} className="text-emerald-300"/>
+              <div style={{ background: THEME.primary, borderRadius: 32, padding: 24, display: "flex", gap: 16, alignItems: "start" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 16, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <FileText size={18} color="#fff" />
                 </div>
                 <div>
-                  <p className="text-xs font-black text-emerald-300 uppercase tracking-widest mb-2">RA 9003 Reminder</p>
-                  <p className="text-xs text-emerald-100/70 leading-relaxed">Properly segregate your waste before collection day. Separate Biodegradable, Recyclable, and Residual waste. Violations may result in warnings on your account.</p>
+                  <p style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 8 }}>RA 9003 Reminder</p>
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>Properly segregate your waste before collection day. Separate Biodegradable, Recyclable, and Residual waste. Violations may result in warnings on your account.</p>
                 </div>
               </div>
             </div>
@@ -788,7 +790,7 @@ export default function CitizenDashboard() {
             <div className="max-w-3xl mx-auto p-6 lg:p-10 space-y-6 animate-in slide-in-from-bottom-4 duration-500">
               <div>
                 <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">My Eco Score</h2>
-                <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">Your RA 9003 compliance record</p>
+                <p className={`text-sm ${scoreColor(100)} font-black uppercase tracking-widest mt-1`}>Your RA 9003 compliance record</p>
               </div>
 
               <div className="bg-white rounded-[3rem] border border-slate-100 p-8 shadow-sm flex flex-col sm:flex-row gap-6 items-center">
@@ -800,7 +802,7 @@ export default function CitizenDashboard() {
                     {[
                       {label:"Warnings",  val:profile?.warning_count??0,      color:"text-red-600",    bg:"bg-red-50 border-red-100",    pts:"-10"},
                       {label:"Violations",val:scores[0]?.violations_count??0, color:"text-amber-600",  bg:"bg-amber-50 border-amber-100",pts:"-15"},
-                      {label:"Resolved",  val:scores[0]?.resolved_count??0,   color:"text-emerald-600",bg:"bg-emerald-50 border-emerald-100",pts:"+5"},
+                      {label:"Resolved",  val:scores[0]?.resolved_count??0,   color:`text-[${THEME.primary}]`,bg:`${THEME.accent} border-slate-100`,pts:"+5"},
                     ].map(f=>(
                       <div key={f.label} className={`rounded-[1.5rem] p-4 border ${f.bg}`}>
                         <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${f.color} opacity-70`}>{f.pts} pts each</p>
@@ -832,13 +834,13 @@ export default function CitizenDashboard() {
 
               <div className="bg-white rounded-[2.5rem] border border-slate-100 p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-5">
-                  <AlertTriangle size={15} className="text-emerald-600"/>
+                  <AlertTriangle size={15} className={`text-[${THEME.primary}]`}/>
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Violation History ({violations.length})</span>
                   {activeViol>0&&<span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{activeViol} open</span>}
                 </div>
                 {violations.length===0?(
                   <div className="py-8 text-center">
-                    <CheckCircle size={28} className="text-emerald-300 mx-auto mb-3"/>
+                    <CheckCircle size={28} style={{ color: THEME.primary, opacity: 0.4 }} className="mx-auto mb-3"/>
                     <p className="text-slate-400 font-black italic text-sm uppercase">No violations — keep it up! 🌿</p>
                   </div>
                 ):violations.map(v=>{
@@ -880,7 +882,7 @@ export default function CitizenDashboard() {
             <div className="max-w-3xl mx-auto p-6 lg:p-10 space-y-6 animate-in slide-in-from-bottom-4 duration-500">
               <div>
                 <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic">Barangay News</h2>
-                <p className="text-sm text-emerald-600 font-black uppercase tracking-widest mt-1">Updates from Barangay {profile?.barangay}</p>
+                <p className={`text-sm ${scoreColor(100)} font-black uppercase tracking-widest mt-1`}>Updates from Barangay {profile?.barangay}</p>
               </div>
               {broadcasts.length===0?(
                 <div className="bg-white rounded-[3rem] border border-slate-100 p-12 text-center shadow-sm">
@@ -890,8 +892,8 @@ export default function CitizenDashboard() {
               ):broadcasts.map(b=>{
                 const icon=BROADCAST_ICON[b.type]??"📢";
                 return (
-                  <div key={b.id} className={`bg-white rounded-[2.5rem] border p-6 flex gap-5 items-start shadow-sm ${b.is_pinned?"border-emerald-200 shadow-emerald-50 shadow-md":"border-slate-100"}`}>
-                    <div className="w-14 h-14 rounded-[1.5rem] bg-emerald-50 border border-emerald-100 flex items-center justify-center text-2xl flex-shrink-0">{icon}</div>
+                  <div key={b.id} className={`bg-white rounded-[2.5rem] border p-6 flex gap-5 items-start shadow-sm ${b.is_pinned?`border-emerald-200 shadow-emerald-50 shadow-md`:"border-slate-100"}`}>
+                    <div className={`w-14 h-14 rounded-[1.5rem] ${THEME.accent} border border-emerald-100 flex items-center justify-center text-2xl flex-shrink-0`}>{icon}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-2">
                         <span className="font-black text-slate-900 italic uppercase tracking-tight">{b.title}</span>

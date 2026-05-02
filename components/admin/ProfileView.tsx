@@ -1,447 +1,398 @@
 "use client";
+// components/admin/CollectionsView.tsx
+// Jurisdiction-scoped collections — only records from drivers assigned to
+// schedules in the admin's barangay/municipality.
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import {
-  User,
-  Mail,
-  Lock,
-  MapPin,
-  Home,
-  ShieldCheck,
-  Camera,
-  Phone,
-  ArrowLeft,
-  Sparkles,
-  Fingerprint,
+  Search, ChevronDown, Download, Truck, CheckCircle2,
+  X, BarChart3, Clock, Scale, MapPin, Building2,
+  Calendar, ArrowUpDown, TrendingUp, RefreshCcw, Hash,
 } from "lucide-react";
-
-interface ProfileViewProps {
-  initialData?: any;
-  onClearContext?: () => void;
-}
 
 const supabase = createClient();
 
-export default function ProfileView({
-  initialData,
-  onClearContext,
-}: ProfileViewProps) {
-  const [isEditing, setIsEditing] = useState(!!initialData);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+interface JurisdictionScope { municipality: string | null; barangay: string | null; }
 
-  const [profile, setProfile] = useState<any>(null);
-  const [editForm, setEditForm] = useState<any>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+interface CollectionRecord {
+  id: string;
+  created_at: string;
+  barangay: string;
+  weight: number;
+  type: string;
+  status: string;
+  driver_name: string | null;
+  bin_name: string | null;
+  device_id: string | null;
+}
 
-  const fetchProfile = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      if (authUser) {
-        const { data: adminCheck } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", authUser.id)
-          .single();
-        setCurrentUserRole(adminCheck?.role);
+interface BarangaySummary {
+  name:           string;
+  weight:         number;
+  count:          number;
+  lastCollection: string;
+  status:         "High" | "Normal" | "Low";
+  drivers:        Set<string>;
+}
+
+async function loadScope(): Promise<JurisdictionScope> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { municipality: null, barangay: null };
+  const { data } = await supabase
+    .from("lgu_details").select("municipality,barangay")
+    .eq("id", user.id).limit(1);
+  return { municipality: data?.[0]?.municipality ?? null, barangay: data?.[0]?.barangay ?? null };
+}
+
+const STATUS_COLOR = (s: "High" | "Normal" | "Low") =>
+  s === "High" ? "bg-[#ef4444]" : s === "Normal" ? "bg-[#10b981]" : "bg-[#f59e0b]";
+
+export default function CollectionsView() {
+  const [scope, setScope]               = useState<JurisdictionScope>({ municipality: null, barangay: null });
+  const [records, setRecords]           = useState<CollectionRecord[]>([]);
+  const [barangays, setBarangays]       = useState<BarangaySummary[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState("");
+  const [sortBy, setSortBy]             = useState("weight-high");
+  const [selectedBrgy, setSelectedBrgy] = useState<BarangaySummary | null>(null);
+  const [viewMode, setViewMode]         = useState<"summary" | "records">("summary");
+  const [sortRecords, setSortRecords]   = useState<"desc" | "asc">("desc");
+
+  const fetchCollections = useCallback(async (sc: JurisdictionScope) => {
+    setLoading(true);
+
+    // Get driver IDs scoped to this jurisdiction via schedule_assignments
+    let scopedDriverIds: string[] | null = null;
+    if (sc.barangay) {
+      const { data: sched } = await supabase
+        .from("schedule_assignments")
+        .select("driver_id,collection_schedules!inner(barangay,municipality)")
+        .eq("collection_schedules.barangay", sc.barangay)
+        .eq("is_active", true);
+      if (sched && sched.length > 0) {
+        scopedDriverIds = [...new Set<string>(sched.map((s: any) => s.driver_id as string))];
       }
-
-      const targetId = initialData?.id || authUser?.id;
-      if (targetId) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", targetId)
-          .single();
-
-        if (data) {
-          setProfile(data);
-          setEditForm({
-            ...data,
-            first_name: data.first_name || "",
-            middle_name: data.middle_name || "",
-            last_name: data.last_name || "",
-            contact_number: data.contact_number || "",
-            email: data.email || "",
-            location: data.location || "",
-            address: data.address || "",
-            new_password: "",
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Registry Fetch Error:", err);
-    } finally {
-      setIsLoading(false);
     }
-  }, [initialData?.id]);
+
+    let q = supabase
+      .from("collections")
+      .select(`id,created_at,barangay,weight,type,status,driver_id,bin_id,device_id,
+               profiles:driver_id(full_name),
+               bins:bin_id(name)`)
+      .order("created_at", { ascending: sortRecords === "asc" });
+
+    if (sc.barangay) q = q.eq("barangay", sc.barangay);
+    if (scopedDriverIds && scopedDriverIds.length > 0) {
+      q = q.in("driver_id", scopedDriverIds);
+    }
+
+    const { data } = await q;
+    const raw: CollectionRecord[] = (data ?? []).map((r: any) => ({
+      id:           r.id,
+      created_at:   r.created_at,
+      barangay:     r.barangay,
+      weight:       Number(r.weight ?? 0),
+      type:         r.type,
+      status:       r.status ?? "VERIFIED",
+      driver_name:  r.profiles?.full_name ?? null,
+      bin_name:     r.bins?.name ?? null,
+      device_id:    r.device_id ?? null,
+    }));
+
+    setRecords(raw);
+
+    // Aggregate by barangay
+    const grouped: Record<string, BarangaySummary> = {};
+    raw.forEach(r => {
+      if (!grouped[r.barangay]) grouped[r.barangay] = { name:r.barangay, weight:0, count:0, lastCollection:r.created_at, status:"Low", drivers:new Set() };
+      grouped[r.barangay].weight += r.weight;
+      grouped[r.barangay].count++;
+      if (r.created_at > grouped[r.barangay].lastCollection) grouped[r.barangay].lastCollection = r.created_at;
+      if (r.driver_name) grouped[r.barangay].drivers.add(r.driver_name);
+    });
+    const summaries = Object.values(grouped).map(b => ({
+      ...b,
+      status: (b.weight > 1000 ? "High" : b.weight > 400 ? "Normal" : "Low") as "High" | "Normal" | "Low",
+    }));
+    setBarangays(summaries);
+    setLoading(false);
+  }, [sortRecords]);
 
   useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+    loadScope().then(sc => { setScope(sc); fetchCollections(sc); });
+  }, [fetchCollections]);
 
-  const canEditLogistics =
-    currentUserRole?.toString().trim().toUpperCase() === "ADMIN";
+  const totalWeight = records.reduce((s, r) => s + r.weight, 0);
+  const totalTrips  = records.length;
+  const uniqueDrivers = new Set(records.map(r => r.driver_name).filter(Boolean)).size;
+  const thisMonth = records.filter(r =>
+    new Date(r.created_at).getMonth() === new Date().getMonth()).length;
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      setIsUploading(true);
-      const file = event.target.files?.[0];
-      if (!file || !profile?.id) return;
+  const sortedBarangays = [...barangays]
+    .filter(b => b.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === "weight-high") return b.weight - a.weight;
+      if (sortBy === "weight-low")  return a.weight - b.weight;
+      if (sortBy === "name")        return a.name.localeCompare(b.name);
+      if (sortBy === "count")       return b.count - a.count;
+      return 0;
+    });
 
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${profile.id}/avatar.${fileExt}`;
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-PH", { month:"short", day:"numeric", year:"numeric" });
+  const fmtTime = (d: string) => new Date(d).toLocaleTimeString("en-PH", { hour:"2-digit", minute:"2-digit", hour12:true });
 
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type,
-          cacheControl: "3600",
-        });
-
-      if (uploadError) {
-        if (uploadError.message.includes("row-level security")) {
-          throw new Error(
-            "ADMIN OVERRIDE FAILED: Please update Storage RLS Policies in Supabase.",
-          );
-        }
-        throw uploadError;
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(filePath);
-
-      const timestampedUrl = `${publicUrl}?t=${Date.now()}`;
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ avatar_url: timestampedUrl })
-        .eq("id", profile.id);
-
-      if (updateError) throw updateError;
-      setProfile((prev: any) => ({ ...prev, avatar_url: timestampedUrl }));
-    } catch (error: any) {
-      console.error("Storage Error:", error);
-      alert(error.message);
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handleSave = async () => {
-    if (!profile?.id) return;
-    setIsSaving(true);
-    const combinedName =
-      `${editForm.first_name} ${editForm.middle_name} ${editForm.last_name}`
-        .replace(/\s+/g, " ")
-        .trim();
-
-    const updatePayload: any = {
-      full_name: combinedName,
-      first_name: editForm.first_name,
-      middle_name: editForm.middle_name,
-      last_name: editForm.last_name,
-      contact_number: editForm.contact_number,
-      email: editForm.email,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (canEditLogistics) {
-      updatePayload.location = editForm.location;
-      updatePayload.address = editForm.address;
-    }
-
-    const { error } = await supabase
-      .from("profiles")
-      .update(updatePayload)
-      .eq("id", profile.id);
-
-    if (editForm.new_password) {
-      await supabase.auth.updateUser({ password: editForm.new_password });
-    }
-
-    if (!error) {
-      setProfile({ ...profile, ...updatePayload });
-      setIsEditing(false);
-      if (initialData && onClearContext) onClearContext();
-    }
-    setIsSaving(false);
-  };
-
-  if (isLoading)
-    return (
-      <div className="h-96 w-full bg-white rounded-[3.5rem] animate-pulse border border-slate-100" />
-    );
-
-  const inputStyle =
-    "w-full px-7 py-5 bg-slate-50 border border-slate-100 rounded-[2rem] text-sm font-black text-black outline-none focus:ring-8 focus:bg-white ring-emerald-500/5 transition-all duration-300 placeholder:text-slate-300";
+  const filteredRecords = records.filter(r => {
+    const q = search.toLowerCase();
+    return (r.driver_name ?? "").toLowerCase().includes(q)
+      || r.barangay.toLowerCase().includes(q)
+      || r.type.toLowerCase().includes(q)
+      || (r.bin_name ?? "").toLowerCase().includes(q);
+  }).sort((a,b) => sortRecords === "desc"
+    ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    : new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-32 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {initialData && (
-        <button
-          onClick={onClearContext}
-          className="group flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-emerald-600 transition-all mb-2"
-        >
-          <div className="p-2 bg-white rounded-xl shadow-sm group-hover:shadow-md transition-all">
-            <ArrowLeft
-              size={14}
-              className="group-hover:-translate-x-1 transition-transform"
-            />
+    <div className="space-y-6">
+      {/* ── JURISDICTION BADGE ── */}
+      {(scope.municipality || scope.barangay) && (
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"0 4px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:100}}>
+            <Building2 size={12} style={{color:"#1c4532"}} />
+            <span style={{fontSize:10,fontWeight:800,color:"#1c4532",textTransform:"uppercase",letterSpacing:".05em"}}>
+              {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
+            </span>
           </div>
-          Return to Registry
-        </button>
+          <button onClick={() => fetchCollections(scope)}
+            style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:"#9ca3af",background:"none",border:"none",cursor:"pointer"}}
+            className="hover:text-[#1c4532] transition-colors">
+            <RefreshCcw size={14} /> Refresh Logs
+          </button>
+        </div>
       )}
 
-      <div className="bg-white rounded-[4rem] border border-slate-100 overflow-hidden shadow-[0_32px_64px_-16px_rgba(0,0,0,0.05)] relative group/card">
-        {/* TOP DECORATIVE BANNER */}
-        <div className="h-52 bg-slate-950 relative overflow-hidden">
-          <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_70%_0%,_#10b981_0%,_transparent_50%)]" />
-          <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-          <div className="absolute top-8 right-12 flex flex-col items-end">
-             <Fingerprint size={40} className="text-emerald-500/20" />
-             <span className="text-emerald-500/10 font-black text-4xl mt-2 tracking-tighter">ECOROUTE: PROFILE</span>
+      {/* ── STATS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Weight",    value: `${totalWeight.toLocaleString()} kg`, icon: <Scale size={16} />,       color: "emerald" },
+          { label: "Total Trips",     value: totalTrips,                           icon: <Truck size={16} />,       color: "blue" },
+          { label: "Active Drivers",  value: uniqueDrivers,                        icon: <TrendingUp size={16} />,  color: "amber" },
+          { label: "This Month",      value: thisMonth,                            icon: <Calendar size={16} />,    color: "slate" },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3
+              ${s.color === "emerald" ? "bg-emerald-50 text-emerald-600" :
+                s.color === "blue"    ? "bg-blue-50 text-blue-600" :
+                s.color === "amber"   ? "bg-amber-50 text-amber-600" :
+                                        "bg-slate-50 text-slate-600"}`}>
+              {s.icon}
+            </div>
+            <p className="text-2xl font-black text-slate-900">{s.value}</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── FILTERS ── */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div style={{position:"relative",flex:1}}>
+          <Search size={16} style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",color:"#9ca3af"}} />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search records by driver, bin, or type…"
+            style={{width:"100%",height:52,paddingLeft:48,paddingRight:20,background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,fontSize:14,color:"#111827",outline:"none"}}
+            className="focus:border-[#1c4532] transition-all" />
+        </div>
+        <div style={{display:"flex",background:"#fff",border:"1px solid #e5e7eb",padding:6,borderRadius:16,gap:4,height:52}}>
+          <button onClick={() => setViewMode("summary")}
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "summary" ? "#1c4532" : "transparent",
+              color:viewMode === "summary" ? "#fff" : "#6b7280"
+            }}>
+            Summary
+          </button>
+          <button onClick={() => setViewMode("records")}
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "records" ? "#111827" : "transparent",
+              color:viewMode === "records" ? "#fff" : "#6b7280"
+            }}>
+            Records
+          </button>
+        </div>
+        {viewMode === "summary" ? (
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+            style={{height:52,padding:"0 20px",background:"#111827",color:"#fff",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",borderRadius:16,border:"none",outline:"none",cursor:"pointer",minWidth:200}}>
+            <option value="weight-high">Sort: Highest Weight</option>
+            <option value="weight-low">Sort: Lowest Weight</option>
+            <option value="count">Sort: Most Trips</option>
+            <option value="name">Sort: Alphabetical</option>
+          </select>
+        ) : (
+          <button onClick={() => setSortRecords(o => o === "desc" ? "asc" : "desc")}
+            style={{height:52,padding:"0 24px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,display:"flex",alignItems:"center",gap:10,fontSize:11,fontWeight:800,color:"#111827",textTransform:"uppercase",letterSpacing:".05em",cursor:"pointer"}}
+            className="hover:border-[#1c4532]">
+            <ArrowUpDown size={14} style={{color:"#10b981"}} />
+            {sortRecords === "desc" ? "Newest First" : "Oldest First"}
+          </button>
+        )}
+      </div>
+
+      {/* ── SUMMARY VIEW ── */}
+      {viewMode === "summary" && (
+        loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1,2,3].map(i => <div key={i} className="h-44 bg-slate-50 rounded-2xl animate-pulse border border-slate-100" />)}
+          </div>
+        ) : sortedBarangays.length === 0 ? (
+          <div className="py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100">
+            <Truck size={36} className="mx-auto text-slate-200 mb-3" />
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No collection data found</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sortedBarangays.map(b => (
+              <div key={b.name} onClick={() => setSelectedBrgy(b)}
+                className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer overflow-hidden">
+                <div className={`h-1.5 w-full ${STATUS_COLOR(b.status)}`} />
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-4">
+                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase
+                      ${b.status === "High"   ? "bg-red-50 text-red-700 border-red-200" :
+                        b.status === "Normal" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                                "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                      {b.status} Volume
+                    </span>
+                    <span className="text-[9px] text-slate-300 font-bold">{b.count} logs</span>
+                  </div>
+                  <h3 className="font-black text-slate-900 text-lg group-hover:text-emerald-700 transition-colors italic uppercase">{b.name}</h3>
+                  <div className="flex items-baseline gap-1 mt-1 mb-4">
+                    <span className="text-3xl font-black text-slate-900">{b.weight.toLocaleString()}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase">kg</span>
+                  </div>
+                  <div className="w-full bg-slate-50 h-2 rounded-full overflow-hidden mb-4">
+                    <div className={`${STATUS_COLOR(b.status)} h-full transition-all duration-700`}
+                      style={{ width: `${Math.min((b.weight / 2000) * 100, 100)}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase">
+                    <div className="flex items-center gap-1"><MapPin size={9} className="text-emerald-500" />{b.drivers.size} driver{b.drivers.size !== 1 ? "s":""}</div>
+                    <div className="flex items-center gap-1"><Calendar size={9} />{fmtDate(b.lastCollection)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* ── RECORDS VIEW ── */}
+      {viewMode === "records" && (
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  {["Date & Time", "Driver", "Bin / Station", "Barangay", "Type", "Weight", "Status"].map(h => (
+                    <th key={h} className="px-5 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest">
+                      No records found
+                    </td>
+                  </tr>
+                ) : filteredRecords.map((r, idx) => (
+                  <tr key={r.id} className={`border-b border-slate-50 hover:bg-emerald-50/30 transition-colors ${idx % 2 === 0 ? "" : "bg-slate-50/30"}`}>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{fmtDate(r.created_at)}</p>
+                      <p className="text-[9px] text-slate-400">{fmtTime(r.created_at)}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{r.driver_name ?? "Unknown"}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-bold text-slate-700">{r.bin_name ?? r.device_id ?? "N/A"}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-lg uppercase">{r.barangay}</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase">{r.type}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-[11px] font-black text-slate-900">{r.weight.toFixed(1)} kg</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg border uppercase
+                        ${r.status === "VERIFIED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
+      )}
 
-        <div className="pt-20 p-8 md:p-16 relative">
-          {/* AVATAR SYSTEM */}
-          <div className="absolute -top-24 left-12 md:left-16">
-            <div className="w-30 h-30 rounded-[2.5rem] bg-white p-3 shadow-2xl relative group/avatar transition-transform duration-500 hover:scale-105">
-              <div className="w-full h-full rounded-[2.5rem] bg-emerald-600 flex items-center justify-center text-6xl text-white font-black italic overflow-hidden border-slate-50">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt="Profile"
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover/avatar:scale-110"
-                  />
-                ) : (
-                  <span className="drop-shadow-lg">{profile?.full_name?.charAt(0)}</span>
-                )}
+      {/* ── BARANGAY DETAIL MODAL ── */}
+      {selectedBrgy && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+          <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={() => setSelectedBrgy(null)} />
+          <div className="relative w-full max-w-lg bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className={`h-1.5 w-full ${STATUS_COLOR(selectedBrgy.status)}`} />
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 italic uppercase">{selectedBrgy.name}</h2>
+                  <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Collection Intelligence</p>
+                </div>
+                <button onClick={() => setSelectedBrgy(null)} className="text-slate-400 hover:text-slate-800 p-1">✕</button>
               </div>
 
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleUpload}
-                className="hidden"
-                accept="image/*"
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className={`absolute inset-3 rounded-[2.8rem] bg-emerald-900/80 backdrop-blur-sm transition-all duration-300 flex flex-col items-center justify-center text-white gap-2 ${
-                  isUploading
-                    ? "opacity-100"
-                    : "opacity-0 group-hover/avatar:opacity-100"
-                }`}
-              >
-                {isUploading ? (
-                  <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Camera size={28} />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Update</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* HEADER INFO */}
-          <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-16">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                 <div className="h-[2px] w-8 bg-emerald-500" />
-                 <span className="text-emerald-600 font-black text-[11px] tracking-[0.3em] uppercase">
-                  {profile?.role} {initialData ? "REGISTRY FILE" : "NODE"}
-                </span>
-              </div>
-              <h2 className="text-5xl md:text-6xl font-black text-slate-950 tracking-tighter uppercase italic leading-[0.9]">
-                {profile?.full_name}
-              </h2>
-              <div className="flex items-center gap-4 text-slate-400 mt-4">
-                 <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                    <Sparkles size={12} className="text-emerald-500" />
-                    <span className="text-[10px] font-bold uppercase tracking-tight">Verified System User</span>
-                 </div>
-              </div>
-            </div>
-            
-            {!isEditing && (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="group px-10 py-5 bg-slate-950 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.2em] hover:bg-emerald-600 transition-all active:scale-95 shadow-2xl shadow-emerald-500/20 flex items-center gap-3"
-              >
-                Edit Entity Record
-              </button>
-            )}
-          </div>
-
-          {isEditing ? (
-            <div className="space-y-10 animate-in slide-in-from-bottom-8 duration-500">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {["first_name", "middle_name", "last_name"].map((key) => (
-                  <div key={key} className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                      <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                      {key.replace("_", " ")}
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={key.toUpperCase()}
-                      value={editForm[key] || ""}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, [key]: e.target.value })
-                      }
-                      className={inputStyle}
-                    />
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {[
+                  { label:"Total Weight",  value:`${selectedBrgy.weight.toLocaleString()} kg`, icon:<Scale size={14}/> },
+                  { label:"Total Trips",   value:selectedBrgy.count,                           icon:<Truck size={14}/> },
+                  { label:"Active Drivers",value:selectedBrgy.drivers.size,                    icon:<TrendingUp size={14}/> },
+                  { label:"Last Collection",value:fmtDate(selectedBrgy.lastCollection),        icon:<Clock size={14}/> },
+                ].map(s => (
+                  <div key={s.label} className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2 text-slate-400">{s.icon}<span className="text-[8px] font-black uppercase tracking-widest">{s.label}</span></div>
+                    <p className="text-lg font-black text-slate-900">{s.value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-10 bg-emerald-50/30 rounded-[3rem] border border-emerald-100/50">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-emerald-700/50 uppercase tracking-widest ml-2">
-                    Digital Mail
-                  </label>
-                  <input
-                    type="email"
-                    value={editForm.email || ""}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, email: e.target.value })
-                    }
-                    className={inputStyle.replace("bg-slate-50", "bg-white shadow-sm")}
-                  />
+              {selectedBrgy.drivers.size > 0 && (
+                <div className="bg-slate-50 rounded-xl p-4 mb-5">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Assigned Drivers</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[...selectedBrgy.drivers].map(name => (
+                      <span key={name} className="text-[10px] font-bold px-3 py-1 bg-white border border-slate-200 rounded-lg text-slate-700">{name}</span>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-emerald-700/50 uppercase tracking-widest ml-2">
-                    Direct Line
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.contact_number || ""}
-                    onChange={(e) =>
-                      setEditForm({
-                        ...editForm,
-                        contact_number: e.target.value,
-                      })
-                    }
-                    className={inputStyle.replace("bg-slate-50", "bg-white shadow-sm")}
-                  />
-                </div>
-              </div>
+              )}
 
-              <div className="relative">
-                {!canEditLogistics && (
-                  <div className="absolute -inset-4 bg-white/40 backdrop-blur-[2px] z-20 flex items-center justify-center rounded-[3.5rem] border-2 border-dashed border-slate-200">
-                    <div className="bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-4 shadow-2xl scale-110">
-                      <Lock size={16} className="text-emerald-500" /> Admin Restricted Area
-                    </div>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">
-                      Operational Route
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.location || ""}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, location: e.target.value })
-                      }
-                      className={inputStyle}
-                      disabled={!canEditLogistics}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">
-                      Point of Interest Address
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.address || ""}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, address: e.target.value })
-                      }
-                      className={inputStyle}
-                      disabled={!canEditLogistics}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col md:flex-row gap-6 pt-10">
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="flex-[2] py-6 bg-emerald-600 text-white rounded-[2.5rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-emerald-500/30 active:scale-[0.98] transition-all hover:bg-emerald-500 hover:-translate-y-1"
-                >
-                  {isSaving ? "PUSHING UPDATES..." : "SYNC TO NETWORK"}
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setSelectedBrgy(null)}
+                  className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+                  Close
                 </button>
-                <button
-                  onClick={onClearContext}
-                  className="flex-1 py-6 bg-slate-100 text-slate-400 rounded-[2.5rem] font-black uppercase text-xs tracking-[0.3em] hover:text-slate-900 hover:bg-slate-200 transition-all active:scale-[0.98]"
-                >
-                  Abort Changes
+                <button onClick={() => { setSearch(selectedBrgy.name); setViewMode("records"); setSelectedBrgy(null); }}
+                  className="py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200">
+                  View Records
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-16 pt-16 border-t border-slate-100/60">
-              <StatCard label="Assigned Area" value={profile?.location || "UNDETERMINED"} />
-              <StatCard label="Base Address" value={profile?.address || "NOT FILED"} />
-              <StatCard
-                label="System Violations"
-                value={profile?.warning_count || "0"}
-                color="text-red-500"
-                icon={<ShieldCheck size={14} />}
-              />
-              <StatCard
-                label="Network Integrity"
-                value="SECURE"
-                color="text-emerald-600"
-                icon={<Sparkles size={14} />}
-              />
-            </div>
-          )}
+          </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  color = "text-black",
-  icon
-}: {
-  label: string;
-  value: any;
-  color?: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="p-10 bg-slate-50/50 rounded-[3rem] border border-slate-100 hover:border-emerald-200 hover:bg-white hover:shadow-xl transition-all duration-500 group/stat">
-      <div className="flex items-center gap-2 mb-4">
-        {icon && <div className="text-emerald-500 transition-transform group-hover/stat:rotate-12">{icon}</div>}
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] italic">
-          {label}
-        </p>
-      </div>
-      <p className={`text-lg font-black uppercase italic truncate tracking-tighter ${color}`}>
-        {value}
-      </p>
+      )}
     </div>
   );
 }

@@ -16,12 +16,23 @@ import { LUPON_CENTER } from "@/components/map/MapAssets";
 
 const supabase = createClient();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAP STYLE — free CARTO Positron (works with MapLibre GL JS, no API key)
-// MapLibre cannot load Mapbox v2 style URLs without a Mapbox GL JS license.
-// ─────────────────────────────────────────────────────────────────────────────
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!;
 
-const MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const MAP_STYLE: any = {
+  version: 8,
+  sources: {
+    "mapbox-sat-streets": {
+      type: "raster",
+      tiles: [`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`],
+      tileSize: 512,
+      attribution: '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+  },
+  layers: [
+    { id: "background",        type: "background", paint: { "background-color": "#0f172a" } },
+    { id: "satellite-streets", type: "raster",     source: "mapbox-sat-streets" },
+  ],
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -593,7 +604,7 @@ function NearestPanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "10px 13px 8px",
+          padding: "12px 14px 10px",
           cursor: "pointer",
           borderBottom: collapsed
             ? "none"
@@ -607,7 +618,7 @@ function NearestPanel({
             style={{
               fontSize: 11,
               fontWeight: 800,
-              color: "#94a3b8",
+              color: "#fff",
               letterSpacing: ".06em",
               textTransform: "uppercase",
             }}
@@ -619,11 +630,9 @@ function NearestPanel({
               : "All Bins"}
           </span>
         </div>
-        <span
-          style={{ fontSize: 11, color: "#475569", fontWeight: 700 }}
-        >
-          {collapsed ? "▲" : "▼"}
-        </span>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 700 }}>
+          {collapsed ? "SHOW" : "HIDE"}
+        </div>
       </div>
 
       {!collapsed && (
@@ -729,6 +738,7 @@ function NearestPanel({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MapLegend({ bins }: { bins: any[] }) {
+  const [collapsed, setCollapsed] = useState(true);
   const rows = [
     { label: "Critical (≥90%)",  color: "#ef4444", count: bins.filter(b => b.fill_level >= 90).length },
     { label: "High (70–89%)",    color: "#f97316", count: bins.filter(b => b.fill_level >= 70 && b.fill_level < 90).length },
@@ -743,62 +753,47 @@ function MapLegend({ bins }: { bins: any[] }) {
         top: 12,
         left: 14,
         zIndex: 1000,
-        background: "rgba(15,23,42,0.88)",
+        background: "rgba(15,23,42,0.92)",
         backdropFilter: "blur(12px)",
-        borderRadius: 12,
-        border: "1.5px solid rgba(255,255,255,.08)",
-        boxShadow: "0 4px 20px rgba(0,0,0,.4)",
-        padding: "10px 13px",
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,.1)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        padding: collapsed ? "10px 14px" : "14px",
         fontFamily: "sans-serif",
-        minWidth: 152,
+        minWidth: collapsed ? "auto" : 180,
+        cursor: "pointer",
+        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
       }}
+      onClick={() => setCollapsed(!collapsed)}
     >
       <div
         style={{
-          fontSize: 9,
-          fontWeight: 800,
-          color: "#475569",
+          fontSize: 10,
+          fontWeight: 900,
+          color: "#fff",
           letterSpacing: ".1em",
           textTransform: "uppercase",
-          marginBottom: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
         }}
       >
-        {bins.length} Bins
+        <span style={{ fontSize: 14 }}>📊</span>
+        {!collapsed && <span>{bins.length} Bins Active</span>}
+        {collapsed && <span style={{ fontSize: 9, opacity: 0.6 }}>LEGEND</span>}
       </div>
-      {rows.map(r => (
-        <div
-          key={r.label}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 5,
-          }}
-        >
-          <div
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              background: r.color,
-              boxShadow: `0 0 5px ${r.color}88`,
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontSize: 11, color: "#94a3b8", flex: 1 }}>
-            {r.label}
-          </span>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 800,
-              color: r.color,
-            }}
-          >
-            {r.count}
-          </span>
+
+      {!collapsed && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {rows.map(r => (
+            <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, boxShadow: `0 0 8px ${r.color}66` }} />
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 900, color: r.color }}>{r.count}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }

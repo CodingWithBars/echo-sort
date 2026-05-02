@@ -46,7 +46,7 @@ async function loadScope(): Promise<JurisdictionScope> {
 }
 
 const STATUS_COLOR = (s: "High" | "Normal" | "Low") =>
-  s === "High" ? "bg-red-500" : s === "Normal" ? "bg-emerald-500" : "bg-amber-400";
+  s === "High" ? "bg-[#ef4444]" : s === "Normal" ? "bg-[#10b981]" : "bg-[#f59e0b]";
 
 export default function CollectionsView() {
   const [scope, setScope]               = useState<JurisdictionScope>({ municipality: null, barangay: null });
@@ -156,16 +156,17 @@ export default function CollectionsView() {
     <div className="space-y-6">
       {/* ── JURISDICTION BADGE ── */}
       {(scope.municipality || scope.barangay) && (
-        <div className="flex items-center gap-3 px-1">
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full">
-            <Building2 size={12} className="text-emerald-600" />
-            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"0 4px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:100}}>
+            <Building2 size={12} style={{color:"#1c4532"}} />
+            <span style={{fontSize:10,fontWeight:800,color:"#1c4532",textTransform:"uppercase",letterSpacing:".05em"}}>
               {[scope.barangay, scope.municipality].filter(Boolean).join(" · ")}
             </span>
           </div>
           <button onClick={() => fetchCollections(scope)}
-            className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors">
-            <RefreshCcw size={11} /> Refresh
+            style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:"#9ca3af",background:"none",border:"none",cursor:"pointer"}}
+            className="hover:text-[#1c4532] transition-colors">
+            <RefreshCcw size={14} /> Refresh Logs
           </button>
         </div>
       )}
@@ -193,26 +194,35 @@ export default function CollectionsView() {
       </div>
 
       {/* ── FILTERS ── */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="flex flex-col md:flex-row gap-4">
+        <div style={{position:"relative",flex:1}}>
+          <Search size={16} style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",color:"#9ca3af"}} />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search barangay, driver, bin, or type…"
-            className="w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-400 focus:ring-2 ring-emerald-400/10 transition-all placeholder:text-slate-300 uppercase tracking-wide" />
+            placeholder="Search records by driver, bin, or type…"
+            style={{width:"100%",height:52,paddingLeft:48,paddingRight:20,background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,fontSize:14,color:"#111827",outline:"none"}}
+            className="focus:border-[#1c4532] transition-all" />
         </div>
-        <div className="flex bg-white border border-slate-200 p-1 rounded-xl gap-1 h-12">
+        <div style={{display:"flex",background:"#fff",border:"1px solid #e5e7eb",padding:6,borderRadius:16,gap:4,height:52}}>
           <button onClick={() => setViewMode("summary")}
-            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "summary" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "summary" ? "#1c4532" : "transparent",
+              color:viewMode === "summary" ? "#fff" : "#6b7280"
+            }}>
             Summary
           </button>
           <button onClick={() => setViewMode("records")}
-            className={`px-5 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${viewMode === "records" ? "bg-slate-900 text-white" : "text-slate-400"}`}>
+            style={{
+              padding:"0 20px",borderRadius:12,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",border:"none",cursor:"pointer",transition:"all .2s",
+              background:viewMode === "records" ? "#111827" : "transparent",
+              color:viewMode === "records" ? "#fff" : "#6b7280"
+            }}>
             Records
           </button>
         </div>
         {viewMode === "summary" ? (
           <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            className="h-12 px-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl border-none outline-none cursor-pointer min-w-[180px]">
+            style={{height:52,padding:"0 20px",background:"#111827",color:"#fff",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:".05em",borderRadius:16,border:"none",outline:"none",cursor:"pointer",minWidth:200}}>
             <option value="weight-high">Sort: Highest Weight</option>
             <option value="weight-low">Sort: Lowest Weight</option>
             <option value="count">Sort: Most Trips</option>
@@ -220,8 +230,9 @@ export default function CollectionsView() {
           </select>
         ) : (
           <button onClick={() => setSortRecords(o => o === "desc" ? "asc" : "desc")}
-            className="h-12 px-4 bg-white border border-slate-200 rounded-xl flex items-center gap-2 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-all">
-            <ArrowUpDown size={13} className="text-emerald-500" />
+            style={{height:52,padding:"0 24px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,display:"flex",alignItems:"center",gap:10,fontSize:11,fontWeight:800,color:"#111827",textTransform:"uppercase",letterSpacing:".05em",cursor:"pointer"}}
+            className="hover:border-[#1c4532]">
+            <ArrowUpDown size={14} style={{color:"#10b981"}} />
             {sortRecords === "desc" ? "Newest First" : "Oldest First"}
           </button>
         )}

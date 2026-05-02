@@ -32,7 +32,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   Plus, Trash2, Save, X, MapPin, Truck, Route,
   RotateCcw, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  Settings, Flag, Navigation, Info, Building2,
+  Settings, Flag, Navigation, Info, Building2, Bell, Link2, ChevronRight
 } from "lucide-react";
 
 const supabase  = createClient();
@@ -45,18 +45,22 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!;
 const MAP_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    "mapbox-sat": {
+    "osm": {
       type: "raster",
       tiles: [`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`],
       tileSize: 512,
-      attribution: "© Mapbox © OpenStreetMap",
+      attribution: '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
   },
   layers: [
-    { id: "bg",  type: "background", paint: { "background-color": "#0f172a" } },
-    { id: "sat", type: "raster",     source: "mapbox-sat" },
+    {
+      id: "osm",
+      type: "raster",
+      source: "osm",
+    },
   ],
 };
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -95,7 +99,19 @@ const FUEL_LPER100KM: Record<string, number> = {
 };
 
 const FILL_COLOR = (pct: number) =>
-  pct >= 90 ? "#ef4444" : pct >= 70 ? "#f97316" : pct >= 40 ? "#eab308" : "#22c55e";
+  pct >= 90 ? "#ef4444" : pct >= 70 ? "#f97316" : pct >= 40 ? "#eab308" : "#1c4532";
+
+const THEME = {
+  primary: "#1c4532",
+  primaryLight: "#e6f0eb",
+  text: "#111827",
+  textMuted: "#6b7280",
+  border: "#e5e7eb",
+  surface: "#ffffff",
+  bg: "#f8fafc",
+  routeColors: ["#ef4444", "#f97316", "#eab308", "#22c55e"]
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -144,7 +160,7 @@ interface SimRoute {
   durationMin:   number;
   fuelL:         number;
   vehicleType:   string;
-  geojson:       GeoJSON.Feature<GeoJSON.LineString> | null;
+  geojson:       GeoJSON.FeatureCollection<GeoJSON.LineString> | null;
   hasStart:      boolean;
   hasExit:       boolean;
 }
@@ -420,17 +436,17 @@ function BinConfigModal({ bin, onUpdate, onRemove, onClose }: {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE SUMMARY PANEL
-// ─────────────────────────────────────────────────────────────────────────────
+// ── ROUTE SUMMARY PANEL ───────────────────────────────────────────────────────
 
-function RouteSummaryPanel({ route, bins, adminProfile, onSave, onDiscard, saving }: {
+function RouteSummaryPanel({ route, bins, adminProfile, onSave, onDiscard, saving, onToggle, isHidden }: {
   route:        SimRoute;
   bins:         PendingBin[];
   adminProfile: AdminProfile | null;
   onSave:       () => void;
   onDiscard:    () => void;
   saving:       boolean;
+  onToggle:     () => void;
+  isHidden:     boolean;
 }) {
   const orderedBins = route.binOrder
     .map(id => bins.find(b => b.tempId === id))
@@ -438,6 +454,19 @@ function RouteSummaryPanel({ route, bins, adminProfile, onSave, onDiscard, savin
 
   const totalCap = orderedBins.reduce((s, b) => s + b.capacity_l, 0);
   const vt = VEHICLE_TYPES.find(t => t.value === route.vehicleType);
+
+  if (isHidden) {
+    return (
+      <button onClick={onToggle} style={{
+        position:"absolute", bottom:24, left:"50%", transform:"translateX(-50%)",
+        zIndex:1200, padding:"12px 24px", borderRadius:25, background:THEME.primary,
+        color:"#fff", border:"none", fontWeight:900, fontSize:14, cursor:"pointer",
+        boxShadow:"0 10px 30px rgba(0,0,0,0.3)", display:"flex", alignItems:"center", gap:8
+      }}>
+        <Eye size={18} /> Show Simulation Results
+      </button>
+    );
+  }
 
   return (
     <div style={{
@@ -460,6 +489,9 @@ function RouteSummaryPanel({ route, bins, adminProfile, onSave, onDiscard, savin
           </div>
         </div>
         <div style={{ display:"flex", gap:6 }}>
+          <button onClick={onToggle} style={{ background:"rgba(255,255,255,.2)", border:"none", borderRadius:8, color:"#fff", width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+            <EyeOff size={16} />
+          </button>
           <button onClick={onDiscard} style={{ background:"rgba(255,255,255,.2)", border:"none", borderRadius:8, color:"#fff", padding:"6px 12px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
             Discard
           </button>
@@ -572,6 +604,8 @@ export default function BinPlacementSimulator() {
   const [saveOk,             setSaveOk]             = useState(false);
 
   const [zoom,               setZoom]               = useState(14);
+  const [showMobileSidebar,  setShowMobileSidebar]  = useState(false);
+  const [showRoutePanel,     setShowRoutePanel]     = useState(true);
 
   // ── Load admin profile ────────────────────────────────────────────────────
   useEffect(() => {
@@ -695,6 +729,7 @@ export default function BinPlacementSimulator() {
     if (pendingBins.length === 0) return;
     setSimming(true);
     setSimRoute(null);
+    setShowRoutePanel(true);
 
     const hasStart = !!startPos;
     const hasExit  = !!exitPos;
@@ -762,12 +797,53 @@ export default function BinPlacementSimulator() {
       return { ...b, routeOrder: idx >= 0 ? idx + 1 : undefined };
     }));
 
+    // Build multi-colored segments
+    // Red -> Orange -> Yellow -> Green
+    const segmentFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    const fullCoords = geojson?.geometry.coordinates || [];
+    
+    if (fullCoords.length > 1) {
+      const numSegments = routeWaypoints.length - 1;
+      const legPoints = routeWaypoints.map(p => [p[1], p[0]]); // [lng, lat]
+      
+      // Find closest indices in fullCoords for each waypoint to split the line
+      let lastIdx = 0;
+      for (let i = 0; i < numSegments; i++) {
+        const nextTarget = legPoints[i + 1];
+        let bestIdx = lastIdx + 1;
+        let minDist = Infinity;
+        
+        // Search ahead for the next waypoint in the coordinate stream
+        for (let j = lastIdx + 1; j < fullCoords.length; j++) {
+          const d = Math.sqrt((fullCoords[j][0] - nextTarget[0])**2 + (fullCoords[j][1] - nextTarget[1])**2);
+          if (d < minDist) { minDist = d; bestIdx = j; }
+          // Optimization: if we start getting further away, we likely found the closest point
+          if (d > minDist && d > 0.001) break; 
+        }
+
+        const segmentCoords = fullCoords.slice(lastIdx, bestIdx + 1);
+        if (segmentCoords.length > 1) {
+          const colorIdx = Math.min(i, THEME.routeColors.length - 1);
+          // Scale colors across segments if more segments than colors
+          const scaledIdx = Math.floor((i / numSegments) * THEME.routeColors.length);
+          const segmentColor = THEME.routeColors[Math.min(scaledIdx, THEME.routeColors.length - 1)];
+
+          segmentFeatures.push({
+            type: "Feature",
+            properties: { color: segmentColor },
+            geometry: { type: "LineString", coordinates: segmentCoords }
+          });
+        }
+        lastIdx = bestIdx;
+      }
+    }
+
     setSimRoute({
       binOrder:      orderedIds,
       orderedCoords: orderedBinCoords,
       distKm, durationMin, fuelL,
       vehicleType:   defaultVehicle,
-      geojson,
+      geojson:       { type: "FeatureCollection", features: segmentFeatures },
       hasStart, hasExit,
     });
 
@@ -844,8 +920,6 @@ export default function BinPlacementSimulator() {
       reason:      `Saved ${binInserts.length} bins + route (${simRoute.distKm.toFixed(1)} km, ${simRoute.durationMin} min). Municipality: ${adminProfile?.municipality ?? "N/A"}, Barangay: ${adminProfile?.barangay ?? "N/A"}.`,
       metadata: {
         bins:  pendingBins.map(b => ({ name:b.name, lat:b.lat, lng:b.lng, bin_type:b.bin_type, vehicle_type:b.vehicle_type, capacity_l:b.capacity_l })),
-        route: { distKm: simRoute.distKm, durationMin: simRoute.durationMin, fuelL: simRoute.fuelL, vehicleType: simRoute.vehicleType, binOrder: simRoute.binOrder },
-        startPos, exitPos,
       },
     });
 
@@ -865,235 +939,263 @@ export default function BinPlacementSimulator() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
-  const hasScope = adminProfile?.municipality || adminProfile?.barangay;
+  const hasScope = !!(adminProfile?.municipality || adminProfile?.barangay);
 
   return (
-    <div style={{ position:"relative", width:"100%", height:"100%", minHeight:600, borderRadius:20, overflow:"hidden", fontFamily:"sans-serif" }}>
+    <div style={{ height: "100%", width: "100%", display: "flex", position: "relative", background: THEME.bg, fontFamily: "system-ui, -apple-system, sans-serif", overflow: "hidden" }}>
+      <style>{`
+        @keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; cursor: pointer; accent-color: ${THEME.primary}; }
+        .btn-press:active { transform: scale(0.92); }
+      `}</style>
 
-      {/* ── MAP ── */}
-      <Map
-        ref={mapRef}
-        mapLib={maplibregl}
-        mapStyle={MAP_STYLE}
-        initialViewState={{ longitude: 126.3, latitude: 7.45, zoom: 13 }}
-        maxZoom={21}
-        style={{ width:"100%", height:"100%" }}
-        cursor={placeMode ? "crosshair" : "grab"}
-        onClick={onMapClick}
-        onZoom={e => setZoom(e.viewState.zoom)}
-        onLoad={() => setMapLoaded(true)}
+      {/* ── LEFT SIDEBAR / MOBILE DRAWER ── */}
+      <div 
+        className={`${showMobileSidebar ? "flex" : "hidden"} lg:flex flex-col`}
+        style={{ 
+          width: 320, background: "#fff", borderRight: `1px solid ${THEME.border}`, 
+          zIndex: 1400, overflowY: "auto",
+          position: showMobileSidebar ? "absolute" : "relative",
+          top: 0, bottom: 0, left: 0,
+          boxShadow: showMobileSidebar ? "0 0 50px rgba(0,0,0,0.2)" : "none"
+        }}
       >
-        {/* Simulated route line */}
-        {mapLoaded && simRoute?.geojson && (
-          <Source id="sim-route" type="geojson" data={simRoute.geojson}>
-            <Layer id="sim-route-glow" type="line"
-              paint={{ "line-color":"#059669", "line-width":14, "line-opacity":0.12, "line-blur":6 }}
-              layout={{ "line-join":"round", "line-cap":"round" }} />
-            <Layer id="sim-route-line" type="line"
-              paint={{ "line-color":"#059669", "line-width":4, "line-opacity":0.95 }}
-              layout={{ "line-join":"round", "line-cap":"round" }} />
-          </Source>
-        )}
-
-        {/* Existing bins */}
-        {showExisting && existingBins.map(bin =>
-          zoom >= 13 && (
-            <Marker key={bin.id} longitude={bin.lng} latitude={bin.lat} anchor="center">
-              <div style={{ width:11, height:11, borderRadius:"50%", background: FILL_COLOR(bin.fill_level), border:"2px solid rgba(255,255,255,.8)", boxShadow:"0 1px 4px rgba(0,0,0,.3)", cursor:"default" }} title={`${bin.name} — ${bin.fill_level}%`} />
-            </Marker>
-          )
-        )}
-
-        {/* Start / HQ marker */}
-        {startPos && (
-          <Marker longitude={startPos[1]} latitude={startPos[0]} anchor="bottom">
-            <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-              <div style={{ background:"#b45309", border:"3px solid #fcd34d", borderRadius:"10px 10px 3px 3px", padding:"6px 10px", display:"flex", flexDirection:"column", alignItems:"center", boxShadow:"0 4px 14px rgba(180,83,9,.5)" }}>
-                <span style={{ fontSize:15 }}>🏢</span>
-                <span style={{ fontSize:8, fontWeight:900, color:"#fff", letterSpacing:".05em" }}>HQ / START</span>
-              </div>
-              <div style={{ width:2, height:8, background:"#b45309" }} />
+        <div style={{ padding: "32px 24px", display: "flex", flexDirection: "column", gap: 32 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h2 style={{ fontSize: 22, fontWeight: 900, color: THEME.text, margin: 0, letterSpacing: "-.02em" }}>Planner</h2>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button onClick={discardAll} style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>Reset</button>
+              <button className="lg:hidden" onClick={() => setShowMobileSidebar(false)} style={{ fontSize: 13, fontWeight: 700, color: THEME.text, background: "none", border: "none", cursor: "pointer" }}>Close</button>
             </div>
-          </Marker>
-        )}
+          </div>
 
-        {/* Exit / disposal site marker */}
-        {exitPos && (
-          <Marker longitude={exitPos[1]} latitude={exitPos[0]} anchor="bottom">
-            <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-              <div style={{ background:"#7c3aed", border:"3px solid #c4b5fd", borderRadius:"10px 10px 3px 3px", padding:"6px 10px", display:"flex", flexDirection:"column", alignItems:"center", boxShadow:"0 4px 14px rgba(124,58,237,.5)" }}>
-                <span style={{ fontSize:15 }}>⚑</span>
-                <span style={{ fontSize:8, fontWeight:900, color:"#fff", letterSpacing:".05em" }}>EXIT / DUMP</span>
-              </div>
-              <div style={{ width:2, height:8, background:"#7c3aed" }} />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: ".1em" }}>Toolbox</span>
             </div>
-          </Marker>
-        )}
-
-        {/* Pending bins */}
-        {pendingBins.map(bin => {
-          const bt = BIN_TYPES.find(t => t.value === bin.bin_type);
-          return (
-            <Marker key={bin.tempId} longitude={bin.lng} latitude={bin.lat} anchor="bottom"
-              draggable
-              onDragEnd={e => updateBin(bin.tempId, { lat: e.lngLat.lat, lng: e.lngLat.lng })}
-            >
-              <div onClick={() => setSelectedBin(bin)} style={{ display:"flex", flexDirection:"column", alignItems:"center", cursor:"pointer" }}>
-                {zoom >= 14 && (
-                  <div style={{ background:"#0f172a", color:"#fff", padding:"3px 9px", borderRadius:20, fontSize:10, fontWeight:800, marginBottom:4, boxShadow:"0 2px 8px rgba(0,0,0,.4)", whiteSpace:"nowrap", border:"1.5px solid rgba(255,255,255,.12)", display:"flex", alignItems:"center", gap:4 }}>
-                    {bt?.icon}
-                    <span>{bin.name || "Unnamed"}</span>
-                    {bin.routeOrder && (
-                      <span style={{ background:"#059669", borderRadius:10, padding:"1px 5px", fontSize:9 }}>#{bin.routeOrder}</span>
-                    )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[
+                { id: "bin",   label: "Add Waste Station", icon: Plus, color: THEME.primary },
+                { id: "start", label: "Set Collection HQ", icon: Navigation, color: "#b45309" },
+                { id: "exit",  label: "Set Disposal Site", icon: Flag, color: "#7c3aed" }
+              ].map(mode => (
+                <button key={mode.id} onClick={() => setPlaceMode(placeMode === mode.id ? null : mode.id as PlaceMode)} style={{
+                  display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 16px", borderRadius: 14,
+                  background: placeMode === mode.id ? `${mode.color}15` : "transparent",
+                  border: `1.5px solid ${placeMode === mode.id ? mode.color : THEME.border}`,
+                  cursor: "pointer", transition: "all 0.2s"
+                }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: placeMode === mode.id ? mode.color : `${mode.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <mode.icon size={16} color={placeMode === mode.id ? "#fff" : mode.color} />
                   </div>
-                )}
-                <div style={{ width:26, height:26, borderRadius:"50%", background:"#059669", border:"3px solid #fff", boxShadow:"0 2px 10px rgba(5,150,105,.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12 }}>
-                  {bt?.icon ?? "🗑️"}
-                </div>
-                <div style={{ width:2, height:8, background:"#059669", opacity:.6 }} />
-              </div>
-            </Marker>
-          );
-        })}
-      </Map>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: placeMode === mode.id ? mode.color : THEME.text }}>{mode.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* ── TOP TOOLBAR ── */}
-      <div style={{
-        position:"absolute", top:14, left:"50%", transform:"translateX(-50%)",
-        zIndex:1100, display:"flex", gap:7, alignItems:"center",
-        background:"rgba(255,255,255,.97)", backdropFilter:"blur(10px)",
-        borderRadius:17, padding:"7px 11px",
-        boxShadow:"0 4px 24px rgba(0,0,0,.18)", border:"1.5px solid rgba(255,255,255,.8)",
-        flexWrap:"wrap", justifyContent:"center",
-      }}>
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: ".1em" }}>Vehicle Configuration</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {VEHICLE_TYPES.map(v => (
+                <button key={v.value} onClick={() => setDefaultVehicle(v.value)} style={{
+                  padding: "12px", borderRadius: 14, border: `1.5px solid ${defaultVehicle === v.value ? THEME.primary : THEME.border}`,
+                  background: defaultVehicle === v.value ? THEME.primaryLight : "#fff",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", transition: "all 0.2s"
+                }}>
+                  <span style={{ fontSize: 20 }}>{v.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: defaultVehicle === v.value ? THEME.primary : THEME.textMuted }}>{v.label.split(" ")[0]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
-        {/* Jurisdiction badge */}
-        {hasScope && (
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 11px", borderRadius:11, background:"#f0fdf4", border:"1.5px solid #bbf7d0" }}>
-            <Building2 size={11} color="#059669" />
-            <span style={{ fontSize:10, fontWeight:800, color:"#059669" }}>
-              {[adminProfile?.barangay, adminProfile?.municipality].filter(Boolean).join(", ")}
-            </span>
+      {/* ── MAIN MAP AREA ── */}
+      <div style={{ flex: 1, position: "relative" }}>
+        
+        {/* MOBILE HEADER */}
+        <div className="lg:hidden" style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 1200, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${THEME.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => setShowMobileSidebar(true)} style={{ width: 36, height: 36, borderRadius: "50%", background: THEME.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", border: "none", cursor: "pointer" }}>
+              <Settings size={18} color={THEME.primary} />
+            </button>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 800, color: THEME.textMuted, textTransform: "uppercase", margin: 0, letterSpacing: ".05em" }}>Planner</p>
+              <p style={{ fontSize: 13, fontWeight: 800, color: THEME.text, margin: 0 }}>{adminProfile?.barangay || "Settings"}</p>
+            </div>
+          </div>
+          <div style={{ background: THEME.primary, color: "#fff", padding: "6px 14px", borderRadius: 20, fontSize: 11, fontWeight: 900 }}>
+            {simming ? "SIMULATING..." : `${pendingBins.length} STATIONS`}
+          </div>
+        </div>
+
+        {/* TOP ACTION PILL (Like PickingToast) */}
+        {placeMode && (
+          <div style={{ position:"absolute", top: 80, left: "50%", transform: "translateX(-50%)", zIndex: 1300, background: "linear-gradient(135deg, #1c4532, #064e3b)", color: "#fff", padding: "10px 22px", borderRadius: 25, fontSize: 13, fontWeight: 800, boxShadow: "0 10px 40px rgba(0,0,0,0.3)", pointerEvents: "none", animation: "slideInUp 0.25s ease", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid #fff", animation: "pulse 1.5s infinite" }} />
+            {placeMode === "bin" ? "Tap map to place waste station" : placeMode === "start" ? "Set truck starting headquarters" : "Mark route disposal/exit point"}
           </div>
         )}
 
-        {!hasScope && (
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 11px", borderRadius:11, background:"#fef3c7", border:"1.5px solid #fde68a" }}>
-            <AlertTriangle size={11} color="#d97706" />
-            <span style={{ fontSize:10, fontWeight:700, color:"#d97706" }}>No jurisdiction set — update your profile</span>
-          </div>
-        )}
-
-        <div style={{ width:1, height:22, background:"#e2e8f0" }} />
-
-        {/* Place bin */}
-        <button onClick={() => setPlaceMode(m => m === "bin" ? null : "bin")} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 13px", borderRadius:11, background: placeMode === "bin" ? "#059669":"#f8fafc", border:`1.5px solid ${placeMode === "bin" ? "#059669":"#e2e8f0"}`, color: placeMode === "bin" ? "#fff":"#334155", fontWeight:800, fontSize:11, cursor:"pointer", textTransform:"uppercase", letterSpacing:".05em", transition:"all .13s" }}>
-          <Plus size={12} /> {placeMode === "bin" ? "Click map…" : "Drop Bin"}
-        </button>
-
-        {/* Set Start */}
-        <button onClick={() => setPlaceMode(m => m === "start" ? null : "start")} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 13px", borderRadius:11, background: placeMode === "start" ? "#b45309" : startPos ? "#fef3c7":"#f8fafc", border:`1.5px solid ${placeMode === "start" ? "#b45309" : startPos ? "#fde68a":"#e2e8f0"}`, color: placeMode === "start" ? "#fff" : startPos ? "#b45309":"#334155", fontWeight:800, fontSize:11, cursor:"pointer", textTransform:"uppercase", letterSpacing:".05em", transition:"all .13s" }}>
-          <Navigation size={12} /> {placeMode === "start" ? "Click map…" : startPos ? "HQ Set ✓" : "Set HQ"}
-        </button>
-
-        {/* Set Exit */}
-        <button onClick={() => setPlaceMode(m => m === "exit" ? null : "exit")} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 13px", borderRadius:11, background: placeMode === "exit" ? "#7c3aed" : exitPos ? "#f5f3ff":"#f8fafc", border:`1.5px solid ${placeMode === "exit" ? "#7c3aed" : exitPos ? "#c4b5fd":"#e2e8f0"}`, color: placeMode === "exit" ? "#fff" : exitPos ? "#7c3aed":"#334155", fontWeight:800, fontSize:11, cursor:"pointer", textTransform:"uppercase", letterSpacing:".05em", transition:"all .13s" }}>
-          <Flag size={12} /> {placeMode === "exit" ? "Click map…" : exitPos ? "Exit Set ✓" : "Set Exit"}
-        </button>
-
-        <div style={{ width:1, height:22, background:"#e2e8f0" }} />
-
-        {/* Default vehicle */}
-        <select value={defaultVehicle} onChange={e => setDefaultVehicle(e.target.value)} style={{ padding:"7px 10px", borderRadius:11, border:"1.5px solid #e2e8f0", fontSize:11, fontWeight:700, color:"#334155", background:"#f8fafc", cursor:"pointer", outline:"none" }}>
-          {VEHICLE_TYPES.map(v => <option key={v.value} value={v.value}>{v.icon} {v.label}</option>)}
-        </select>
-
-        <div style={{ width:1, height:22, background:"#e2e8f0" }} />
-
-        {/* Simulate */}
-        <button onClick={simulateRoute} disabled={pendingBins.length === 0 || simming} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 13px", borderRadius:11, background: pendingBins.length === 0 ? "#f1f5f9":"#2563eb", border:"none", color: pendingBins.length === 0 ? "#94a3b8":"#fff", fontWeight:800, fontSize:11, cursor: pendingBins.length === 0 ? "not-allowed":"pointer", textTransform:"uppercase", letterSpacing:".05em", transition:"all .13s" }}>
-          <Route size={12} /> {simming ? "Calculating A*…" : `Simulate (${pendingBins.length})`}
-        </button>
-
-        {/* Toggle existing */}
-        <button onClick={() => setShowExisting(p => !p)} title={showExisting ? "Hide existing bins":"Show existing bins"} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 11px", borderRadius:11, background:"transparent", border:"1.5px solid #e2e8f0", color:"#64748b", cursor:"pointer", fontSize:11, fontWeight:700 }}>
-          {showExisting ? <Eye size={12} /> : <EyeOff size={12} />} {existingBins.length}
-        </button>
-
-        {/* Discard all */}
-        {pendingBins.length > 0 && (
-          <button onClick={discardAll} style={{ display:"flex", alignItems:"center", gap:5, padding:"7px 11px", borderRadius:11, background:"#fef2f2", border:"1.5px solid #fecaca", color:"#dc2626", cursor:"pointer", fontSize:11, fontWeight:700 }}>
-            <X size={12} /> Discard
+        {/* RIGHT SIDE CONTROLS (Compass, 3D, Recenter) */}
+        <div style={{ position: "absolute", right: 16, bottom: "calc(max(env(safe-area-inset-bottom, 24px), 24px) + 80px)", zIndex: 1100, display: "flex", flexDirection: "column", gap: 14 }}>
+          <button onClick={() => { mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 500 }); }} className="btn-press" style={{ width: 52, height: 52, borderRadius: 26, background: "#fff", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <svg width="28" height="28" viewBox="0 0 28 28" style={{ transform: `rotate(${-(mapRef.current?.getBearing() ?? 0)}deg)`, transition: "transform 0.4s ease" }}>
+              <polygon points="14,3 17,14 14,12 11,14" fill="#ef4444"/>
+              <polygon points="14,25 17,14 14,16 11,14" fill="#475569"/>
+            </svg>
           </button>
-        )}
-      </div>
-
-      {/* ── CLICK HINT ── */}
-      {placeMode && (
-        <div style={{ position:"absolute", top:70, left:"50%", transform:"translateX(-50%)", zIndex:1100, background: placeMode === "start" ? "#b45309" : placeMode === "exit" ? "#7c3aed" : "#059669", color:"#fff", padding:"7px 18px", borderRadius:20, fontSize:11, fontWeight:700, pointerEvents:"none", boxShadow:`0 2px 12px rgba(0,0,0,.3)` }}>
-          {placeMode === "bin" && "📍 Click to place a bin — drag to reposition"}
-          {placeMode === "start" && "🏢 Click to set HQ / truck start position"}
-          {placeMode === "exit" && "⚑ Click to set disposal site / exit point"}
+          <button onClick={() => { const p = mapRef.current?.getPitch() ?? 0; mapRef.current?.easeTo({ pitch: p > 10 ? 0 : 45, duration: 500 }); }} className="btn-press" style={{ width: 52, height: 52, borderRadius: 26, background: "#fff", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: THEME.primary }}>3D</div>
+          </button>
+          <button onClick={() => { if(adminProfile?.areaLat) mapRef.current?.flyTo({ center: [adminProfile.areaLng!, adminProfile.areaLat!], zoom: 15 }); }} className="btn-press" style={{ width: 52, height: 52, borderRadius: 26, background: THEME.primary, border: "none", boxShadow: "0 8px 24px rgba(28,69,50,0.3)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <Navigation size={22} color="#fff" />
+          </button>
         </div>
-      )}
 
-      {/* ── PENDING BINS LIST ── */}
-      {pendingBins.length > 0 && !simRoute && (
-        <div style={{ position:"absolute", top:14, right:14, zIndex:1100, width:210, background:"rgba(255,255,255,.97)", backdropFilter:"blur(10px)", borderRadius:17, boxShadow:"0 4px 24px rgba(0,0,0,.15)", border:"1.5px solid rgba(255,255,255,.8)", overflow:"hidden" }}>
-          <div style={{ padding:"11px 13px", borderBottom:"1px solid #f1f5f9", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <p style={{ margin:0, fontSize:10, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".08em" }}>Pending ({pendingBins.length})</p>
-            <p style={{ margin:0, fontSize:9, color:"#94a3b8" }}>Drag to move</p>
-          </div>
-          <div style={{ maxHeight:260, overflowY:"auto" }}>
-            {pendingBins.map((bin, idx) => {
-              const bt = BIN_TYPES.find(t => t.value === bin.bin_type);
-              return (
-                <div key={bin.tempId} onClick={() => setSelectedBin(bin)} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 13px", cursor:"pointer", borderBottom:"1px solid #f8fafc", background: selectedBin?.tempId === bin.tempId ? "#f0fdf4":"transparent", transition:"background .1s" }}>
-                  <div style={{ width:26, height:26, borderRadius:"50%", background:"#f0fdf4", border:"1.5px solid #bbf7d0", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, flexShrink:0 }}>{bt?.icon ?? "🗑️"}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ margin:0, fontSize:11, fontWeight:700, color:"#0f172a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{bin.name || `Bin ${idx + 1}`}</p>
-                    <p style={{ margin:0, fontSize:9, color:"#94a3b8" }}>{bt?.label} · {bin.capacity_l}L</p>
+        {/* MOBILE BOTTOM ACTION BAR */}
+        <div className="lg:hidden" style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 1200, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)", padding: "16px 20px", borderTop: `1px solid ${THEME.border}`, display: "flex", gap: 10 }}>
+          <button onClick={() => setPlaceMode(placeMode === "bin" ? null : "bin")} className="btn-press" style={{ flex: 1, height: 52, borderRadius: 16, background: placeMode === "bin" ? THEME.primary : THEME.primaryLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <Plus size={20} color={placeMode === "bin" ? "#fff" : THEME.primary} />
+            <span style={{ fontSize: 14, fontWeight: 800, color: placeMode === "bin" ? "#fff" : THEME.primary }}>Add Bin</span>
+          </button>
+          <button onClick={simulateRoute} disabled={pendingBins.length === 0 || simming} className="btn-press" style={{ flex: 2, height: 52, borderRadius: 16, background: simming ? THEME.textMuted : THEME.primary, border: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 8px 20px rgba(28,69,50,0.3)" }}>
+            {simming ? <RotateCcw size={20} color="#fff" className="animate-spin" /> : <Route size={20} color="#fff" />}
+            <span style={{ fontSize: 15, fontWeight: 900, color: "#fff" }}>{simming ? "Optimizing..." : "Simulate"}</span>
+          </button>
+          <button onClick={() => setPlaceMode(placeMode === "start" ? null : "start")} className="btn-press" style={{ width: 52, height: 52, borderRadius: 16, background: placeMode === "start" ? "#b45309" : "#fff", border: `1.5px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Navigation size={22} color={placeMode === "start" ? "#fff" : "#b45309"} />
+          </button>
+        </div>
+
+        {/* MAP COMPONENT */}
+        <Map
+          ref={mapRef}
+          mapLib={maplibregl}
+          mapStyle={MAP_STYLE}
+          initialViewState={{
+            latitude:  adminProfile?.areaLat ?? 7.45,
+            longitude: adminProfile?.areaLng ?? 126.3,
+            zoom: 15,
+          }}
+          style={{ width: "100%", height: "100%" }}
+          onClick={onMapClick}
+          onLoad={() => setMapLoaded(true)}
+          attributionControl={false}
+          dragRotate touchZoomRotate pitchWithRotate
+        >
+          {/* Simulated route line (Multi-colored segments) */}
+          {mapLoaded && simRoute?.geojson && (
+            <Source id="sim-route" type="geojson" data={simRoute.geojson}>
+              <Layer id="sim-route-line" type="line" paint={{ 
+                "line-color": ["get", "color"], 
+                "line-width": 6, 
+                "line-opacity": 0.8 
+              }} layout={{ "line-join": "round", "line-cap": "round" }} />
+              <Layer id="sim-route-glow" type="line" paint={{ 
+                "line-color": ["get", "color"], 
+                "line-width": 14, 
+                "line-opacity": 0.1, 
+                "line-blur": 5 
+              }} />
+            </Source>
+          )}
+
+          {/* Existing bins from DB (Waze-style premium markers) */}
+          {showExisting && existingBins.map(bin => {
+            const color = FILL_COLOR(bin.fill_level);
+            return (
+              <Marker key={bin.id} latitude={bin.lat} longitude={bin.lng} anchor="center">
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 20, background: "rgba(10,14,26,0.9)", backdropFilter: "blur(8px)", border: `1.5px solid ${color}55`, boxShadow: "0 4px 12px rgba(0,0,0,0.2)", marginBottom: 4
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 20 20" style={{ transform: "rotate(-90deg)" }}>
+                      <circle cx="10" cy="10" r="7" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="2.5" />
+                      <circle cx="10" cy="10" r="7" fill="none" stroke={color} strokeWidth="2.5" strokeDasharray={`${(bin.fill_level/100)*44} 44`} strokeLinecap="round" />
+                    </svg>
+                    <span style={{ fontSize: 10, fontWeight: 900, color: "#fff" }}>{bin.fill_level}%</span>
                   </div>
-                  <Settings size={11} style={{ color:"#94a3b8", flexShrink:0 }} />
+                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: color, border: "2.5px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+              </Marker>
+            );
+          })}
 
-      {/* ── LEGEND ── */}
-      <div style={{ position:"absolute", bottom: simRoute ? 240 : 14, left:14, zIndex:1100, background:"rgba(255,255,255,.95)", backdropFilter:"blur(8px)", borderRadius:13, padding:"9px 13px", boxShadow:"0 2px 12px rgba(0,0,0,.1)", fontSize:10 }}>
-        <p style={{ margin:"0 0 5px", fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:".07em" }}>Legend</p>
-        {[
-          { color:"#22c55e", label:"Low fill (< 40%)" },
-          { color:"#eab308", label:"Moderate (40–70%)" },
-          { color:"#f97316", label:"High (70–90%)" },
-          { color:"#ef4444", label:"Critical (> 90%)" },
-          { color:"#059669", label:"New bin (pending save)", border:true },
-        ].map(l => (
-          <div key={l.label} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-            <div style={{ width:9, height:9, borderRadius:"50%", background:l.color, border: l.border ? "2px solid #fff":undefined, flexShrink:0 }} />
-            <span style={{ color:"#475569", fontWeight:600 }}>{l.label}</span>
-          </div>
-        ))}
-        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
-          <span style={{ fontSize:12 }}>🏢</span><span style={{ color:"#475569", fontWeight:600 }}>HQ / Start</span>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <span style={{ fontSize:12 }}>⚑</span><span style={{ color:"#475569", fontWeight:600 }}>Exit / Disposal</span>
-        </div>
+          {/* Start / HQ marker */}
+          {startPos && (
+            <Marker latitude={startPos[0]} longitude={startPos[1]} anchor="bottom" draggable onDragEnd={e => setStartPos([e.lngLat.lat, e.lngLat.lng])}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ padding: "6px 14px", borderRadius: 12, background: "rgba(10,14,26,0.95)", border: "1.5px solid #b45309", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, color: "#fcd34d", letterSpacing: "0.05em" }}>START HQ</span>
+                </div>
+                <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#b45309", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #fff", boxShadow: "0 6px 16px rgba(0,0,0,0.2)" }}>
+                  <Navigation size={20} color="#fff" />
+                </div>
+              </div>
+            </Marker>
+          )}
+
+          {/* Exit / Disposal marker */}
+          {/* Exit / Disposal marker */}
+          {exitPos && (
+            <Marker latitude={exitPos[0]} longitude={exitPos[1]} anchor="bottom" draggable onDragEnd={e => setExitPos([e.lngLat.lat, e.lngLat.lng])}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ padding: "6px 14px", borderRadius: 12, background: "rgba(10,14,26,0.95)", border: "1.5px solid #7c3aed", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, color: "#c4b5fd", letterSpacing: "0.05em" }}>DISPOSAL</span>
+                </div>
+                <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#7c3aed", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #fff", boxShadow: "0 6px 16px rgba(0,0,0,0.2)" }}>
+                  <Flag size={20} color="#fff" />
+                </div>
+              </div>
+            </Marker>
+          )}
+
+          {/* Pending bins */}
+          {pendingBins.map((bin, idx) => {
+            const bt = BIN_TYPES.find(t => t.value === bin.bin_type);
+            const isSel = selectedBin?.tempId === bin.tempId;
+            return (
+              <Marker key={bin.tempId} latitude={bin.lat} longitude={bin.lng} anchor="bottom" draggable onDragEnd={e => updateBin(bin.tempId, { lat: e.lngLat.lat, lng: e.lngLat.lng })}>
+                <div onClick={() => setSelectedBin(bin)} style={{
+                  cursor: "move", display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                  transform: isSel ? "scale(1.2)" : "none", transition: "transform 0.2s"
+                }}>
+                  <div style={{
+                    padding: "4px 8px", background: "#1c4532", color: "#fff", borderRadius: 8, fontSize: 9, fontWeight: 800,
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.1)", marginBottom: 2
+                  }}>
+                    {idx + 1}
+                  </div>
+                  <div style={{
+                    width: 34, height: 34, borderRadius: "50%", background: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 6px 16px rgba(0,0,0,0.15)", border: `2.5px solid #1c4532`,
+                  }}>
+                    <span style={{ fontSize: 16 }}>{bt?.icon ?? "🗑️"}</span>
+                  </div>
+                </div>
+              </Marker>
+            );
+          })}
+        </Map>
       </div>
 
-      {/* ── SUCCESS TOAST ── */}
+      {/* SUCCESS TOAST */}
       {saveOk && (
-        <div style={{ position:"absolute", top:14, left:"50%", transform:"translateX(-50%)", zIndex:1500, background:"#059669", color:"#fff", padding:"11px 22px", borderRadius:18, fontWeight:800, fontSize:13, boxShadow:"0 4px 20px rgba(5,150,105,.4)", display:"flex", alignItems:"center", gap:8 }}>
-          <CheckCircle2 size={15} /> Bins + route saved! Visible to drivers and citizens in your jurisdiction.
+        <div style={{ position:"absolute", top:24, left:"50%", transform:"translateX(-50%)", zIndex:1500, background:THEME.primary, color:"#fff", padding:"12px 24px", borderRadius:12, fontWeight:700, fontSize:14, boxShadow:"0 10px 30px rgba(28,69,50,0.3)", display:"flex", alignItems:"center", gap:10, animation: "slideInUp .3s ease" }}>
+          <CheckCircle2 size={18} /> Route saved successfully!
         </div>
       )}
 
-      {/* ── BIN CONFIG MODAL ── */}
+      {/* MODALS */}
       {selectedBin && (
         <BinConfigModal
           bin={selectedBin}
@@ -1103,7 +1205,6 @@ export default function BinPlacementSimulator() {
         />
       )}
 
-      {/* ── ROUTE SUMMARY PANEL ── */}
       {simRoute && (
         <RouteSummaryPanel
           route={simRoute}
@@ -1112,6 +1213,8 @@ export default function BinPlacementSimulator() {
           onSave={saveBins}
           onDiscard={discardAll}
           saving={saving}
+          onToggle={() => setShowRoutePanel(!showRoutePanel)}
+          isHidden={!showRoutePanel}
         />
       )}
     </div>
