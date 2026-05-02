@@ -3,8 +3,8 @@
 
 import React, { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Flag, AlertTriangle, CheckCircle } from "lucide-react";
-import { EM, STATUS_CFG, REPORT_STATUSES, INP, timeAgo } from "./_constants";
+import { Flag, AlertTriangle, CheckCircle, Search, Eye, FileText, User, ShieldAlert } from "lucide-react";
+import { THEME, STATUS_CFG, REPORT_STATUSES, INP, timeAgo, fmtDate } from "./_constants";
 import { Modal, MHead, MFooter } from "./_shared";
 import type { CitizenReport, LGUProfile } from "./_types";
 
@@ -18,7 +18,6 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
   const updateStatus = async (newStatus: string) => {
     setSaving(true);
     try {
-      // 1. Update report status
       const { error: rErr } = await supabase
         .from("citizen_reports")
         .update({
@@ -30,7 +29,6 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
         .eq("id", report.id);
       if (rErr) { console.error("citizen_reports update:", rErr); setSaving(false); return; }
 
-      // 2. Audit log
       await supabase.from("audit_logs").insert({
         admin_id: profile.id,
         action_type: "LGU_REVIEW_REPORT",
@@ -38,7 +36,6 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
         reason: `Report ${newStatus} by ${profile.full_name}. Notes: ${notes || "none"}`,
       });
 
-      // 3. Notify reporter
       await supabase.from("notifications").insert({
         user_id: report.reporter_id,
         type: "REPORT_STATUS",
@@ -48,11 +45,7 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
         metadata: { report_id: report.id, status: newStatus },
       });
 
-      // 4. If escalating → insert a violation against the reported citizen
       if (newStatus === "Escalated" && report.reported_id) {
-        // Map the free-text report type to the violations type column.
-        // The violations table uses the same text values — pass as-is.
-        // We strip extra whitespace and ensure it is non-empty.
         const violationType = (report.type ?? "Improper Disposal").trim();
         const violationDesc = [
           "Escalated from citizen report.",
@@ -68,12 +61,7 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
           status:      "Pending",
         });
 
-        if (vErr) {
-          console.error("violations insert:", vErr);
-          // Surface error to LGU user without blocking the status update
-          setSuccess(newStatus + " (violation insert failed — check console)");
-        } else {
-          // Notify the reported citizen about the filed violation
+        if (!vErr) {
           await supabase.from("notifications").insert({
             user_id:    report.reported_id,
             type:       "VIOLATION_FILED",
@@ -94,111 +82,135 @@ export default function ReportModal({report,profile,onClose,onRefresh}:{report:C
   };
 
   const sc = STATUS_CFG[report.status] ?? STATUS_CFG.Submitted;
-  const nextActions = REPORT_STATUSES.filter(s => s !== report.status && s !== "Resolved");
 
   return (
     <Modal onClose={onClose} wide>
-      <MHead title="Review Report" sub={`Filed ${timeAgo(report.created_at)}`} icon={Flag} onClose={onClose}/>
-      <div style={{padding:"18px 22px",display:"flex",flexDirection:"column",gap:16}}>
-        {success && <div style={{padding:"10px 14px",borderRadius:10,background:EM[50],border:`1px solid ${EM[300]}`,display:"flex",alignItems:"center",gap:8}}><CheckCircle size={15} color={EM[600]}/><span style={{fontSize:13,color:EM[800],fontWeight:600}}>Status updated to: {success}</span></div>}
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div style={{background:EM[50],borderRadius:10,padding:"12px 14px",border:`1px solid ${EM[100]}`}}>
-            <div style={{fontSize:10,fontWeight:800,color:EM[600],letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Reporter</div>
-            <div style={{fontSize:13,fontWeight:600,color:EM[900]}}>{report.reporter_name ?? "Anonymous"}</div>
-            <div style={{fontSize:11,color:"#9ca3af"}}>Identity hidden from reported citizen</div>
+      <MHead title="Review Inbound Signal" sub={`Inbound Transmission: ${timeAgo(report.created_at)}`} icon={Flag} onClose={onClose}/>
+      
+      <div className="no-scrollbar" style={{padding:"24px",display:"flex",flexDirection:"column",gap:20,overflowY:"auto",minHeight:0}}>
+        {success && (
+          <div style={{padding:"14px",borderRadius:12,background:THEME.accent,border:`1px solid ${THEME.primary}20`,display:"flex",alignItems:"center",gap:10, animation: "fadeInUp 0.4s ease both"}}>
+            <CheckCircle size={18} className="text-[#1c4532]" />
+            <span style={{fontSize:12,color:THEME.primary,fontWeight:900, textTransform: "uppercase"}}>Status updated to: {success}</span>
           </div>
-          <div style={{background:"#fef3c7",borderRadius:10,padding:"12px 14px",border:"1px solid #fde68a"}}>
-            <div style={{fontSize:10,fontWeight:800,color:"#92400e",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Reported Citizen</div>
-            <div style={{fontSize:13,fontWeight:600,color:"#78350f"}}>{report.reported_name ?? "Unknown"}</div>
+        )}
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:12}}>
+          <div style={{background:"#f9fafb",borderRadius:16,padding:"16px",border:`1px solid ${THEME.border}`, display: "flex", alignItems: "center", gap: 12}}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${THEME.border}`, color: "#1c4532" }}>
+              <User size={20} />
+            </div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 900, color: THEME.textMuted, textTransform: "uppercase" }}>Reporter Node</p>
+              <p style={{ fontSize: 13, fontWeight: 800, color: THEME.text, textTransform: "uppercase" }}>{report.reporter_name ?? "Anonymous"}</p>
+            </div>
+          </div>
+          <div style={{background:"#fef3c7",borderRadius:16,padding:"16px",border:"1px solid #fde68a", display: "flex", alignItems: "center", gap: 12}}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #fde68a", color: "#92400e" }}>
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 900, color: "#92400e", textTransform: "uppercase" }}>Target Node</p>
+              <p style={{ fontSize: 13, fontWeight: 800, color: "#78350f", textTransform: "uppercase" }}>{report.reported_name ?? "Unknown"}</p>
+            </div>
           </div>
         </div>
 
-        <div style={{padding:"12px 14px",borderRadius:10,background:"#fff",border:`1.5px solid ${EM[100]}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-            <span style={{fontSize:12,fontWeight:800,color:EM[900]}}>{report.type.replace(/_/g," ")}</span>
-            <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:sc.bg,color:sc.text}}>{sc.label}</span>
+        {/* Report Content */}
+        <div style={{background:"#fff",borderRadius:16,border:`1px solid ${THEME.border}`, overflow: "hidden"}}>
+          <div style={{ padding: "12px 16px", background: "#f9fafb", borderBottom: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{fontSize:12,fontWeight:900,color:THEME.text, textTransform: "uppercase"}}>{report.type.replace(/_/g," ")}</span>
+              <span style={{fontSize:9,fontWeight:900,padding:"2px 8px",borderRadius:20,background:sc.bg,color:sc.text, textTransform: "uppercase"}}>{sc.label}</span>
+            </div>
+            <span style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase" }}>{fmtDate(report.created_at)}</span>
           </div>
-          <p style={{fontSize:13,color:"#374151",margin:0,lineHeight:1.6}}>{report.description ?? "No description provided."}</p>
+          <div style={{ padding: "16px" }}>
+            <p style={{fontSize:13,color:THEME.text,margin:0,lineHeight:1.6, fontWeight: 500}}>{report.description ?? "No description provided by reporter."}</p>
+          </div>
         </div>
 
-        {/* Proof images */}
+        {/* Proof attachments */}
         {report.proof_urls.length > 0 && (
           <div>
-            <div style={{fontSize:10,fontWeight:800,color:EM[700],letterSpacing:".08em",textTransform:"uppercase",marginBottom:8}}>Proof ({report.proof_urls.length} file{report.proof_urls.length!==1?"s":""})</div>
+            <div style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",marginBottom:10, display: "flex", alignItems: "center", gap: 6}}>
+              <Eye size={12} /> Verification Assets ({report.proof_urls.length})
+            </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {report.proof_urls.map((url,i)=>(
-                <a key={i} href={url} target="_blank" rel="noopener" style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,background:EM[50],border:`1px solid ${EM[200]}`,fontSize:12,color:EM[700],textDecoration:"none",fontWeight:600}}>
-                  📎 File {i+1}
+                <a key={i} href={url} target="_blank" rel="noopener" style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",borderRadius:12,background:"#fff",border:`1px solid ${THEME.border}`,fontSize:11,color:THEME.text,textDecoration:"none",fontWeight:700, textTransform: "uppercase", transition: "all 0.2s"}}>
+                  <FileText size={14} className="text-[#1c4532]" /> Asset {i+1}
                 </a>
               ))}
             </div>
           </div>
         )}
 
+        {/* Notes */}
         <div>
-          <label style={{fontSize:10,fontWeight:800,color:EM[700],letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:5}}>LGU Internal Notes (hidden from citizens)</label>
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add your assessment notes here…" rows={3} style={{...INP,resize:"none",lineHeight:1.6}}/>
+          <label style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",display:"block",marginBottom:6}}>LGU Assessment Notes</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add administrative assessment notes for this report (hidden from residents)…" rows={3} style={{...INP,resize:"none",lineHeight:1.6}}/>
         </div>
 
+        {/* Action center */}
         {report.status !== "Escalated" && report.status !== "Dismissed" && (
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {/* Primary action — Escalate */}
+          <div style={{display:"flex",flexDirection:"column",gap:12, padding: "20px", background: "#f9fafb", borderRadius: 16, border: `1px solid ${THEME.border}`}}>
+            <div style={{ fontSize: 10, fontWeight: 900, color: THEME.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Protocol Actions</div>
+            
             {report.reported_id ? (
               <button
                 onClick={()=>updateStatus("Escalated")}
                 disabled={saving}
                 style={{
-                  padding:"12px 18px",borderRadius:10,
+                  padding:"14px",borderRadius:12,
                   background:"#dc2626",color:"#fff",
-                  border:"none",fontSize:13,fontWeight:800,
+                  border:"none",fontSize:12,fontWeight:900,
                   cursor:saving?"not-allowed":"pointer",
-                  display:"flex",alignItems:"center",gap:8,
+                  display:"flex",alignItems:"center",justifyContent: "center",gap:8,
                   opacity:saving?.6:1,
-                  boxShadow:"0 4px 16px rgba(220,38,38,.25)",
-                  transition:"all .15s",
+                  boxShadow:"0 8px 20px -6px rgba(220,38,38,0.3)",
+                  transition:"all .2s",
+                  textTransform: "uppercase"
                 }}
               >
-                <AlertTriangle size={15}/>
-                Escalate → File Formal Violation against {report.reported_name ?? "citizen"}
+                <AlertTriangle size={16}/>
+                Escalate Protocol: File Violation
               </button>
             ) : (
-              <div style={{padding:"10px 14px",borderRadius:10,background:"#fef3c7",border:"1px solid #fde68a",fontSize:12,color:"#92400e",display:"flex",alignItems:"center",gap:8}}>
-                ⚠ Cannot escalate — no reported citizen identified. This report was filed without selecting a specific citizen.
+              <div style={{padding:"12px 16px",borderRadius:12,background:"#fffbeb",border:"1px solid #fde68a",fontSize:11,color:"#92400e",display:"flex",alignItems:"center",gap:10, fontWeight: 700, textTransform: "uppercase"}}>
+                <AlertTriangle size={16}/> Protocol restricted: no target node identified.
               </div>
             )}
-            {/* Secondary actions */}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            
+            <div style={{display:"grid",gridTemplateColumns: "1fr 1fr", gap:10}}>
               <button
                 onClick={()=>updateStatus("Under Review")}
                 disabled={saving||report.status==="Under Review"}
-                style={{padding:"8px 16px",borderRadius:9,background:"#eff6ff",color:"#1e40af",border:"1.5px solid #bfdbfe",fontSize:12,fontWeight:700,cursor:"pointer",opacity:(report.status==="Under Review"||saving)?.5:1}}
+                style={{padding:"12px",borderRadius:12,background:"#fff",color:THEME.primary,border:`1px solid ${THEME.primary}30`,fontSize:11,fontWeight:900,textTransform: "uppercase", cursor:"pointer", transition: "all 0.2s"}}
               >
-                Mark Under Review
+                Set Under Review
               </button>
               <button
                 onClick={()=>updateStatus("Dismissed")}
                 disabled={saving}
-                style={{padding:"8px 16px",borderRadius:9,background:"#f1f5f9",color:"#374151",border:"1.5px solid #e2e8f0",fontSize:12,fontWeight:700,cursor:"pointer"}}
+                style={{padding:"12px",borderRadius:12,background:"#fff",color:"#64748b",border:`1px solid ${THEME.border}`,fontSize:11,fontWeight:900,textTransform: "uppercase", cursor:"pointer", transition: "all 0.2s"}}
               >
-                Dismiss
+                Dismiss Signal
               </button>
             </div>
           </div>
         )}
+        
         {(report.status==="Escalated"||report.status==="Dismissed")&&(
-          <div style={{padding:"10px 14px",borderRadius:10,background:EM[50],border:`1px solid ${EM[200]}`,fontSize:12,color:EM[700],fontWeight:600}}>
-            ✓ This report has been {report.status.toLowerCase()}. No further actions available.
+          <div style={{padding:"16px",borderRadius:16,background:"#f1f5f9",border:`1px solid ${THEME.border}`,fontSize:11,color:THEME.textMuted,fontWeight:900, textTransform: "uppercase", textAlign: "center", letterSpacing: "0.05em"}}>
+            ✓ Protocol {report.status} Logged. Signal Finalized.
           </div>
         )}
       </div>
-      <MFooter><button onClick={onClose} style={{padding:"8px 20px",borderRadius:9,background:EM[600],color:"#fff",border:"none",fontSize:13,fontWeight:700,cursor:"pointer"}}>Close</button></MFooter>
+
+      <MFooter>
+        <button onClick={onClose} style={{padding:"10px 24px",borderRadius:10,background:THEME.primary,color:"#fff",border:"none",fontSize:12,fontWeight:900,textTransform: "uppercase", cursor:"pointer", boxShadow: `0 4px 12px ${THEME.primary}20`}}>Close</button>
+      </MFooter>
     </Modal>
   );
 }
-
-// ── SCHEDULE MODAL ────────────────────────────────────────────────────────────
-// Uses schedule_assignments table (join table) for driver assignment.
-// New columns (bin_ids, driver_id, vehicle_type, collection_area) need the
-// migration SQL below before they work — they are silently omitted until then.
-// Nominatim OSM geocoding fetches real puroks/streets for the LGU's barangay.

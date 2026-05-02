@@ -4,7 +4,7 @@
 
 import React from "react";
 import { X } from "lucide-react";
-import { EM, INP } from "./_constants";
+import { THEME, INP } from "./_constants";
 
 // ── MODAL WRAPPER ─────────────────────────────────────────────────────────────
 
@@ -12,16 +12,17 @@ export function Modal({ onClose, children, wide = false }: {
   onClose: () => void; children: React.ReactNode; wide?: boolean;
 }) {
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(6,78,59,.22)",backdropFilter:"blur(4px)",zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(12px)",zIndex:3000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <style>{`
         @media(min-width:640px){
-          .modal-sheet{align-self:center!important;border-radius:20px!important;max-height:90vh!important;margin:16px!important;}
+          .modal-sheet{align-self:center!important;border-radius:24px!important;max-height:90vh!important;margin:24px!important;}
         }
+        @keyframes modalIn {from{opacity:0;transform:scale(.97) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
       `}</style>
       <div
         onClick={e => e.stopPropagation()}
         className="modal-sheet"
-        style={{background:"#fff",borderRadius:"20px 20px 0 0",border:`1.5px solid ${EM[200]}`,width:"100%",maxWidth:wide?800:520,boxShadow:`0 -8px 40px rgba(6,78,59,.18)`,animation:"modalIn .22s ease both",maxHeight:"92vh",overflowY:"auto",WebkitOverflowScrolling:"touch"}}
+        style={{background:"#fff",borderRadius:"24px 24px 0 0",border:`1px solid ${THEME.border}`,width:"100%",maxWidth:wide?840:520,boxShadow:`0 25px 50px -12px rgba(0, 0, 0, 0.25)`,animation:"modalIn .3s cubic-bezier(0.16, 1, 0.3, 1) both",maxHeight:"92vh",overflowY:"auto",WebkitOverflowScrolling:"touch", position: "relative"}}
       >
         {children}
       </div>
@@ -35,20 +36,20 @@ export function MHead({ title, sub, icon: Icon, onClose }: {
   title: string; sub?: string; icon?: any; onClose: () => void;
 }) {
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"15px 18px",borderBottom:`1px solid ${EM[100]}`,background:EM[50],borderRadius:"18px 18px 0 0",flexShrink:0}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"20px 24px",borderBottom:`1px solid ${THEME.border}`,background:"#f9fafb",borderRadius:"24px 24px 0 0",flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0,flex:1}}>
         {Icon && (
-          <div style={{width:36,height:36,borderRadius:10,background:EM[100],display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <Icon size={17} color={EM[700]} />
+          <div style={{width:40,height:40,borderRadius:12,background:THEME.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0, border: `1px solid ${THEME.primary}10`}}>
+            <Icon size={18} className="text-[#1c4532]" />
           </div>
         )}
         <div style={{minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:800,color:EM[900],fontFamily:"Georgia,serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>
-          {sub && <div style={{fontSize:11,color:EM[600],marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
+          <div style={{fontSize:15,fontWeight:900,color:THEME.text,textTransform: "uppercase", letterSpacing: "-0.02em", overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>
+          {sub && <div style={{fontSize:11,fontWeight: 700, color:THEME.textMuted,textTransform: "uppercase", letterSpacing: "0.05em", marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
         </div>
       </div>
-      <button onClick={onClose} style={{width:32,height:32,borderRadius:9,border:`1px solid ${EM[200]}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <X size={14} color={EM[700]} />
+      <button onClick={onClose} style={{width:32,height:32,borderRadius:8,border:`1px solid ${THEME.border}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0, transition: "all 0.2s"}}>
+        <X size={16} color={THEME.textMuted} />
       </button>
     </div>
   );
@@ -58,7 +59,7 @@ export function MHead({ title, sub, icon: Icon, onClose }: {
 
 export function MFooter({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10,padding:"14px 22px",borderTop:`1px solid ${EM[100]}`,background:EM[50],borderRadius:"0 0 18px 18px",flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:12,padding:"16px 24px",borderTop:`1px solid ${THEME.border}`,background:"#f9fafb",borderRadius:"0 0 24px 24px",flexWrap:"wrap"}}>
       {children}
     </div>
   );
@@ -67,7 +68,7 @@ export function MFooter({ children }: { children: React.ReactNode }) {
 // ── BUTTONS ───────────────────────────────────────────────────────────────────
 
 export const BtnCancel = ({ onClick }: { onClick: () => void }) => (
-  <button onClick={onClick} style={{padding:"8px 16px",borderRadius:9,border:`1.5px solid ${EM[200]}`,background:"#fff",color:EM[700],fontSize:13,fontWeight:600,cursor:"pointer"}}>
+  <button onClick={onClick} style={{padding:"10px 18px",borderRadius:10,border:`1px solid ${THEME.border}`,background:"#fff",color:THEME.text,fontSize:12,fontWeight:700,textTransform: "uppercase", cursor:"pointer", transition: "all 0.2s"}}>
     Cancel
   </button>
 );
@@ -75,29 +76,46 @@ export const BtnCancel = ({ onClick }: { onClick: () => void }) => (
 export const BtnPrimary = ({ onClick, disabled, children, danger = false }: {
   onClick: () => void; disabled?: boolean; children: React.ReactNode; danger?: boolean;
 }) => (
-  <button onClick={onClick} disabled={disabled} style={{padding:"8px 20px",borderRadius:9,background:danger?"#dc2626":EM[600],color:"#fff",border:"none",fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.6:1,display:"flex",alignItems:"center",gap:7}}>
+  <button onClick={onClick} disabled={disabled} style={{padding:"10px 22px",borderRadius:10,background:danger?"#dc2626":THEME.primary,color:"#fff",border:"none",fontSize:12,fontWeight:900,textTransform: "uppercase", cursor:disabled?"not-allowed":"pointer",opacity:disabled?.6:1,display:"flex",alignItems:"center",gap:8, transition: "all 0.2s", boxShadow: danger ? "0 4px 12px rgba(220, 38, 38, 0.2)" : "0 4px 12px rgba(28, 69, 50, 0.2)"}}>
     {children}
   </button>
 );
 
 // ── STAT CARD ─────────────────────────────────────────────────────────────────
 
-export function StatCard({ icon: Icon, label, value, sub, accent, delay = 0, warn = false }: {
+export function StatCard({ icon: Icon, label, value, sub, accent, delay = 0, warn = false, className = "" }: {
   icon: any; label: string; value: string | number; sub?: string;
-  accent: string; delay?: number; warn?: boolean;
+  accent: string; delay?: number; warn?: boolean; className?: string;
 }) {
   return (
-    <div style={{background:"#fff",borderRadius:16,padding:"18px 20px",border:warn?`1.5px solid ${accent}55`:`1.5px solid ${EM[100]}`,boxShadow:warn?`0 4px 20px ${accent}15`:"0 2px 12px rgba(6,78,59,.06)",display:"flex",flexDirection:"column",gap:10,animation:`fadeUp .5s ease ${delay}s both`}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <span style={{fontSize:10,fontWeight:800,color:"#6b7280",letterSpacing:".1em",textTransform:"uppercase"}}>{label}</span>
-        <div style={{width:36,height:36,borderRadius:10,background:`${accent}15`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <Icon size={18} style={{color:accent}} />
+    <div 
+      className={className}
+      style={{
+        background:"#fff",
+        borderRadius:20,
+        padding:"20px 24px",
+        border: warn ? `2px solid ${accent}40` : `1px solid ${THEME.border}`,
+        boxShadow: warn ? `0 10px 25px -5px ${accent}20` : "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
+        display:"flex",
+        flexDirection:"column",
+        gap:12,
+        animation: `fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s both`,
+        position: "relative",
+        overflow: "hidden"
+      }}
+    >
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between", position: "relative", zIndex: 2}}>
+        <span style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase"}}>{label}</span>
+        <div style={{width:40,height:40,borderRadius:12,background:`${accent}10`,display:"flex",alignItems:"center",justifyContent:"center", border: `1px solid ${accent}20`}}>
+          <Icon size={20} style={{color:accent}} />
         </div>
       </div>
-      <div style={{fontSize:30,fontWeight:900,color:warn?accent:EM[900],lineHeight:1,fontFamily:"Georgia,serif"}}>{value}</div>
-      {sub && <div style={{fontSize:11,color:"#9ca3af"}}>{sub}</div>}
-      <div style={{height:3,borderRadius:2,background:`${accent}18`}}>
-        <div style={{height:"100%",width:"60%",borderRadius:2,background:accent}} />
+      <div style={{fontSize:32,fontWeight:900,color: warn ? accent : THEME.text,lineHeight:1, letterSpacing: "-0.04em", position: "relative", zIndex: 2}}>{value}</div>
+      {sub && <div style={{fontSize:11,fontWeight: 700, color:"#9ca3af", textTransform: "uppercase", letterSpacing: "0.02em", position: "relative", zIndex: 2}}>{sub}</div>}
+      
+      {/* Visual background indicator */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 4, background: `${accent}10` }}>
+        <div style={{ height: "100%", width: "100%", background: accent, opacity: 0.6 }} />
       </div>
     </div>
   );

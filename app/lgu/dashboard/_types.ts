@@ -8,6 +8,7 @@ export interface AuditLogRow { id: string; action_type: string; reason: string; 
 export interface LGUProfile {
   id: string; full_name: string; email: string;
   barangay: string; municipality: string; position_title: string;
+  avatar_url: string | null;
 }
 export interface Citizen {
   id: string; full_name: string; email: string;

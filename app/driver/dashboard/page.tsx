@@ -447,7 +447,7 @@ export default function DriverDashboard() {
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] shadow-xl shadow-emerald-100 border border-emerald-50 overflow-hidden flex-shrink-0">
-              <img src="/icons/icon-512x512.png" alt="EcoRoute Logo" className="h-full w-full object-cover p-3"/>
+              <img src="/icons/eco-route.png" alt="EcoRoute Logo" className="h-full w-full object-cover p-3"/>
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">EcoRoute</h1>

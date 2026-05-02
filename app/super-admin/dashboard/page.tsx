@@ -305,11 +305,33 @@ export default function Page() {
   const[showLogout,setShowLogout]=useState(false);
   const[isLoggingOut,setIsLoggingOut]=useState(false);
   const[notifOpen,setNotifOpen]=useState(false);
-  const[editingKey,setEditingKey]=useState<string|null>(null);
-  const[editingVal,setEditingVal]=useState("");
+  const [editingKey,setEditingKey]=useState<string|null>(null);
+  const [editingVal,setEditingVal]=useState("");
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
   const notifRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{if(!notifOpen)return;const h=(e:MouseEvent)=>{if(notifRef.current&&!notifRef.current.contains(e.target as Node))setNotifOpen(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[notifOpen]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    }
+  };
 
   const fetchData=useCallback(async()=>{
     const{data:{user}}=await supabase.auth.getUser();
@@ -403,18 +425,34 @@ export default function Page() {
           );})}
         </nav>
 
-        {/* Upgrade / Download Card imitation */}
-        <div style={{padding:"24px",flexShrink:0}}>
-          <div style={{background:"linear-gradient(145deg, #102a1e, #1c4532)",borderRadius:20,padding:"24px",position:"relative",overflow:"hidden",color:"#fff",boxShadow:"0 10px 25px rgba(28,69,50,0.3)"}}>
-            <div style={{position:"absolute",right:-20,bottom:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
-            <div style={{position:"absolute",right:10,top:-10,width:60,height:60,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-              <Shield size={16} color="#a3d4bb"/>
+        {/* Upgrade / Download Card */}
+        {isInstallable && (
+          <div style={{padding:"24px",flexShrink:0, paddingTop: 0}}>
+            <div style={{background:"linear-gradient(145deg, #102a1e, #1c4532)",borderRadius:20,padding:"24px",position:"relative",overflow:"hidden",color:"#fff",boxShadow:"0 10px 25px rgba(28,69,50,0.3)"}}>
+              <div style={{position:"absolute",right:-20,bottom:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
+              <div style={{position:"absolute",right:10,top:-10,width:60,height:60,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <Shield size={16} color="#a3d4bb"/>
+              </div>
+              <div style={{fontSize:16,fontWeight:700,marginBottom:6}}>Download our<br/>Mobile App</div>
+              <div style={{fontSize:11,color:"#a3d4bb",marginBottom:16}}>Manage system on the go</div>
+              <button 
+                onClick={handleInstallApp}
+                style={{width:"100%",padding:"10px",borderRadius:12,background:"rgba(255,255,255,0.15)",color:"#fff",border:"none",fontSize:12,fontWeight:600,cursor:"pointer",backdropFilter:"blur(4px)", transition: "all 0.2s"}}
+                onMouseOver={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.25)"}
+                onMouseOut={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.15)"}
+              >
+                Download App
+              </button>
             </div>
-            <div style={{fontSize:16,fontWeight:700,marginBottom:6}}>Download our<br/>Mobile App</div>
-            <div style={{fontSize:11,color:"#a3d4bb",marginBottom:16}}>Manage system on the go</div>
-            <button style={{width:"100%",padding:"10px",borderRadius:12,background:"rgba(255,255,255,0.15)",color:"#fff",border:"none",fontSize:12,fontWeight:600,cursor:"pointer",backdropFilter:"blur(4px)"}}>Download</button>
           </div>
+        )}
+
+        <div style={{padding:"16px 24px",borderTop:"1px solid #f3f4f6",marginTop:"auto",flexShrink:0}}>
+          <button onClick={()=>setShowLogout(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontFamily:"sans-serif",transition:"all .2s", fontWeight:700}}>
+            <LogOut size={18} strokeWidth={2.5}/>
+            <span style={{fontSize:14}}>Sign Out</span>
+          </button>
         </div>
 
       </aside>
@@ -469,7 +507,6 @@ export default function Page() {
               </div>
               <div style={{display:"flex",gap:12}}>
                 <button onClick={fetchData} style={{padding:"10px 20px",borderRadius:24,background:"#1c4532",color:"#fff",border:"none",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><RefreshCw size={14}/> Refresh Data</button>
-                <button onClick={()=>setShowLogout(true)} style={{padding:"10px 20px",borderRadius:24,background:"#fff",color:"#111827",border:"1px solid #e5e7eb",fontSize:13,fontWeight:600,cursor:"pointer",boxShadow:"0 2px 5px rgba(0,0,0,0.02)",display:"flex",alignItems:"center",gap:8}}><LogOut size={14}/> Sign Out</button>
               </div>
             </div>
 

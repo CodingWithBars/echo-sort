@@ -2,10 +2,16 @@ import React from 'react';
 // app/lgu/dashboard/_constants.ts
 // Shared constants, palette, style objects, and utility helpers.
 
-export const EM: Record<string, string> = {
-  900:"#064e3b",800:"#065f46",700:"#047857",600:"#059669",
-  500:"#10b981",400:"#34d399",300:"#6ee7b7",200:"#a7f3d0",
-  100:"#d1fae5", 50:"#ecfdf5",
+// ── THEME CONSTANTS ──────────────────────────────────────────────────────────
+export const THEME = {
+  bg: "#f4f7f5",
+  surface: "#ffffff",
+  primary: "#1c4532",
+  primaryHover: "#2d5a45",
+  text: "#111827",
+  textMuted: "#6b7280",
+  border: "#e5e7eb",
+  accent: "#f0fdf4"
 };
 
 export const VIOLATION_TYPES = [
@@ -32,7 +38,7 @@ export const BROADCAST_TEMPLATES = [
 export const STATUS_CFG: Record<string, {dot:string;text:string;bg:string;label:string}> = {
   Pending:        {dot:"#f59e0b",text:"#92400e",bg:"#fef3c7",label:"Pending"},
   "Under Review": {dot:"#3b82f6",text:"#1e40af",bg:"#eff6ff",label:"Under Review"},
-  Resolved:       {dot:EM[600],  text:EM[800],  bg:EM[50],   label:"Resolved"},
+  Resolved:       {dot:THEME.primary,  text:THEME.primary,  bg:THEME.accent,   label:"Resolved"},
   Submitted:      {dot:"#8b5cf6",text:"#5b21b6",bg:"#f5f3ff",label:"Submitted"},
   Escalated:      {dot:"#ef4444",text:"#991b1b",bg:"#fef2f2",label:"Escalated"},
   Dismissed:      {dot:"#6b7280",text:"#374151",bg:"#f1f5f9",label:"Dismissed"},
@@ -49,9 +55,16 @@ export const VEHICLE_TYPES = [
 ];
 
 export const INP: React.CSSProperties = {
-  padding:"9px 12px", borderRadius:9, border:`1.5px solid ${EM[200]}`,
-  background:EM[50], color:EM[900], fontSize:13, outline:"none",
-  fontFamily:"sans-serif", width:"100%", boxSizing:"border-box",
+  padding:"10px 14px",
+  borderRadius:10,
+  border:`1px solid ${THEME.border}`,
+  background:THEME.surface,
+  color:THEME.text,
+  fontSize:13,
+  outline:"none",
+  width:"100%",
+  boxSizing:"border-box",
+  transition: "border-color 0.2s"
 };
 
 // ── Utility helpers ────────────────────────────────────────────────────────────
@@ -78,4 +91,7 @@ export const fmtTime = (t: string | null) => {
 };
 
 export const scoreColor = (s: number) =>
-  s >= 90 ? EM[600] : s >= 70 ? "#059669" : s >= 50 ? "#d97706" : s >= 30 ? "#ea580c" : "#dc2626";
+  s >= 90 ? THEME.primary : s >= 70 ? "#16a34a" : s >= 50 ? "#d97706" : s >= 30 ? "#ea580c" : "#dc2626";
+
+export const SLIDE_IN_RIGHT = `@keyframes slideInRight{from{transform:translateX(100%)}to{transform:translateX(0)}} @keyframes spin{to{transform:rotate(360deg)}}`;
+export const FADE_IN_UP = `@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`;

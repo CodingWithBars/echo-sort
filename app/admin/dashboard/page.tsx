@@ -324,6 +324,28 @@ export default function AdminDashboard() {
   const [showNotifications,  setShowNotifications] = useState(false);
   const [adminProfile,       setAdminProfile]      = useState<{id:string;full_name:string;role:string;avatar_url?:string|null}|null>(null);
   const [loading,            setLoading]           = useState(true);
+  const [deferredPrompt,     setDeferredPrompt]    = useState<any>(null);
+  const [isInstallable,      setIsInstallable]     = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    }
+  };
 
   const fetchAdminProfile = useCallback(async()=>{
     const {data:{user}} = await supabase.auth.getUser();
@@ -421,18 +443,23 @@ export default function AdminDashboard() {
         </nav>
 
         {/* Sidebar Footer Card */}
-        <div style={{padding:"20px",marginTop:"auto"}}>
-          <div style={{background:THEME.accent,borderRadius:20,padding:20,position:"relative",overflow:"hidden",border:`1px solid #dcfce7`}}>
-            <div style={{width:36,height:36,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,boxShadow:"0 4px 10px rgba(0,0,0,0.05)"}}>
-              <Smartphone size={18} color={THEME.primary}/>
+        {isInstallable && (
+          <div style={{padding:"20px",marginTop:"auto"}}>
+            <div style={{background:THEME.accent,borderRadius:20,padding:20,position:"relative",overflow:"hidden",border:`1px solid #dcfce7`}}>
+              <div style={{width:36,height:36,borderRadius:12,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,boxShadow:"0 4px 10px rgba(0,0,0,0.05)"}}>
+                <Smartphone size={18} color={THEME.primary}/>
+              </div>
+              <p style={{fontSize:13,fontWeight:800,color:THEME.primary,marginBottom:4}}>EcoRoute Mobile</p>
+              <p style={{fontSize:11,color:"#4b7a63",lineHeight:1.5,marginBottom:12}}>Monitor collections on the go.</p>
+              <button 
+                onClick={handleInstallApp}
+                style={{width:"100%",padding:"10px",borderRadius:12,background:THEME.primary,color:"#fff",border:"none",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}
+              >
+                Get the App <ArrowUpRight size={14}/>
+              </button>
             </div>
-            <p style={{fontSize:13,fontWeight:800,color:THEME.primary,marginBottom:4}}>EcoRoute Mobile</p>
-            <p style={{fontSize:11,color:"#4b7a63",lineHeight:1.5,marginBottom:12}}>Monitor collections on the go.</p>
-            <button style={{width:"100%",padding:"10px",borderRadius:12,background:THEME.primary,color:"#fff",border:"none",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-              Get the App <ArrowUpRight size={14}/>
-            </button>
           </div>
-        </div>
+        )}
 
         <div style={{padding:"0 16px 24px",flexShrink:0}}>
           <button onClick={()=>setShowLogoutModal(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,border:"none",background:"transparent",color:"#ef4444",cursor:"pointer",fontSize:14,fontWeight:600}} className="hover:bg-red-50">

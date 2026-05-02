@@ -12,7 +12,7 @@ import {
   Users, AlertTriangle, Search, LogOut, Bell, FileText,
   RefreshCw, ShieldAlert, Menu, Flag, ChevronRight,
   TrendingUp, ShieldCheck, Recycle, Megaphone, Send,
-  Calendar, Lightbulb,
+  Calendar, Lightbulb, Smartphone, ArrowUpRight
 } from "lucide-react";
 
 // ── Extracted components ──────────────────────────────────────────────────────
@@ -30,9 +30,9 @@ import type {
   Broadcast, Schedule, CitizenReport,
 } from "./_types";
 import {
-  EM, STATUS_CFG, BROADCAST_TYPES, DAYS,
+  STATUS_CFG, BROADCAST_TYPES, DAYS,
   timeAgo, fmtDate, fmtTime, scoreColor,
-  INP,
+  INP, THEME, SLIDE_IN_RIGHT, FADE_IN_UP
 } from "./_constants";
 
 const supabase = createClient();
@@ -51,7 +51,7 @@ export default function Page() {
   const [notifs,          setNotifs]         = useState<DBNotif[]>([]);
   const [loading,         setLoading]        = useState(true);
 
-  const [activeTab,       setActiveTab]      = useState<"citizens"|"violations"|"reports"|"schedules"|"broadcasts"|"overview">("citizens");
+  const [activeTab,       setActiveTab]      = useState<"overview"|"citizens"|"violations"|"reports"|"schedules"|"broadcasts">("overview");
   const [search,          setSearch]         = useState("");
   const [statusFilter,    setStatusFilter]   = useState("all");
   const [citizenFilter,   setCitizenFilter]  = useState("all");
@@ -66,6 +66,9 @@ export default function Page() {
   const [isLoggingOut,    setIsLoggingOut]    = useState(false);
   const [showProfile,     setShowProfile]     = useState(false);
   const [notifOpen,       setNotifOpen]       = useState(false);
+  
+  const [deferredPrompt,  setDeferredPrompt]  = useState<any>(null);
+  const [isInstallable,   setIsInstallable]   = useState(false);
 
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -78,12 +81,32 @@ export default function Page() {
     return () => document.removeEventListener("mousedown", h);
   }, [notifOpen]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    }
+  };
+
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
 
-    const { data: pData }   = await supabase.from("profiles").select("id,full_name,email").eq("id", user.id).single();
+    const { data: pData }   = await supabase.from("profiles").select("id,full_name,email,avatar_url").eq("id", user.id).single();
     const { data: lguData } = await supabase.from("lgu_details").select("barangay,municipality,position_title").eq("id", user.id).single();
     if (!pData || !lguData) { router.push("/login"); return; }
 
@@ -94,6 +117,7 @@ export default function Page() {
       barangay:       lguData.barangay,
       municipality:   lguData.municipality ?? "",
       position_title: lguData.position_title ?? "LGU Official",
+      avatar_url:     pData.avatar_url
     };
     setProfile(me);
 
@@ -298,23 +322,23 @@ export default function Page() {
 
   // ── Loading screen ────────────────────────────────────────────────────────
   if (loading) return (
-    <div style={{ minHeight:"100vh", background:EM[50], display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    <div style={{ minHeight:"100vh", background:THEME.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <style>{SLIDE_IN_RIGHT}</style>
       <div style={{ textAlign:"center" }}>
-        <div style={{ width:44, height:44, borderRadius:"50%", border:`3px solid ${EM[200]}`, borderTopColor:EM[600], animation:"spin 1s linear infinite", margin:"0 auto 14px" }}/>
-        <p style={{ fontSize:11, fontWeight:700, color:EM[700], letterSpacing:".1em", textTransform:"uppercase" }}>Loading dashboard…</p>
+        <div style={{ width:48, height:48, borderRadius:"50%", border:`4px solid ${THEME.primary}20`, borderTopColor:THEME.primary, animation:"spin 1s linear infinite", margin:"0 auto 16px" }}/>
+        <p style={{ fontSize:11, fontWeight:800, color:THEME.textMuted, letterSpacing:".15em", textTransform:"uppercase" }}>Syncing Barangay Data…</p>
       </div>
     </div>
   );
 
   // ── Tab config ────────────────────────────────────────────────────────────
   const TABS = [
+    { id:"overview",   label:"Overview",   count:null },
     { id:"citizens",   label:"Citizens",   count:citizens.length },
     { id:"violations", label:"Violations", count:violations.length },
     { id:"reports",    label:"Reports",    count:reports.length, badge:pendingRep },
     { id:"schedules",  label:"Schedules",  count:schedules.length },
     { id:"broadcasts", label:"Broadcasts", count:broadcasts.length },
-    { id:"overview",   label:"Overview",   count:null },
   ];
   const TAB_ICONS: Record<string, any> = {
     citizens: Users, violations: AlertTriangle, reports: Flag,
@@ -326,21 +350,20 @@ export default function Page() {
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] font-sans relative overflow-hidden text-slate-900">
       <style>{`
-        @keyframes fadeUp  {from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes dropIn  {from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        ${SLIDE_IN_RIGHT}
+        ${FADE_IN_UP}
         @keyframes modalIn {from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-        @keyframes spin    {to{transform:rotate(360deg)}}
         @keyframes pulse   {0%,100%{opacity:1}50%{opacity:.35}}
-        .row-hover:hover   {background:${EM[50]}!important;cursor:pointer;}
+        .row-hover:hover   {background:${THEME.accent}!important;cursor:pointer;}
         .tab-pill          {transition:all .18s;border-radius:10px;cursor:pointer;}
-        .tab-pill:hover    {background:${EM[100]}!important;}
+        .tab-pill:hover    {background:${THEME.accent}!important;}
         .act-btn           {transition:all .15s;}
         .act-btn:hover     {opacity:.85;transform:scale(.98);}
         ::-webkit-scrollbar{width:4px;height:4px;}
         ::-webkit-scrollbar-track{background:transparent;}
-        ::-webkit-scrollbar-thumb{background:${EM[200]};border-radius:2px;}
+        ::-webkit-scrollbar-thumb{background:${THEME.border};border-radius:2px;}
         input::placeholder,textarea::placeholder{color:#9ca3af;}
-        select option{color:${EM[900]};background:#fff;}
+        select option{color:${THEME.text};background:#fff;}
         .sgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}
         @media(max-width:640px){.sgrid{grid-template-columns:repeat(2,1fr)!important;}}
       `}</style>
@@ -354,47 +377,68 @@ export default function Page() {
       <aside className={`fixed inset-y-0 left-0 z-[2001] w-72 bg-white border-r border-slate-200 transform transition-transform duration-500 ease-in-out lg:translate-x-0 lg:static flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 border border-emerald-500/20">
+            <div className="w-10 h-10 bg-[#1c4532] rounded-xl flex items-center justify-center shadow-lg shadow-[#1c453220] border border-[#1c4532]/10">
               <Recycle className="text-white" size={20} />
             </div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">EcoRoute</h1>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-none mt-0.5">LGU Portal</p>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight leading-none">EcoRoute</h1>
+              <p className="text-[10px] font-bold text-[#1c4532] uppercase tracking-[0.1em] mt-1">LGU Dashboard</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1.5 mt-2 overflow-y-auto">
-          <p className="px-5 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">Barangay {profile?.barangay}</p>
+        <nav className="flex-1 px-4 space-y-1 mt-2 overflow-y-auto no-scrollbar">
+          <p className="px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Node: Barangay {profile?.barangay}</p>
           {TABS.map(tab => {
             const Icon = TAB_ICONS[tab.id] ?? TrendingUp;
             const isActive = activeTab === tab.id;
             return (
               <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setIsSidebarOpen(false); setSearch(""); }}
-                className={`w-full flex items-center justify-between px-5 py-3.5 rounded-xl transition-all duration-300 group ${isActive ? "bg-emerald-600 text-white shadow-md shadow-emerald-100" : "text-slate-500 hover:bg-slate-50 hover:text-emerald-600"}`}>
+                className={`w-full flex items-center justify-between px-5 py-3 rounded-xl transition-all duration-200 group ${isActive ? "bg-[#1c4532] text-white shadow-md shadow-[#1c453220]" : "text-slate-500 hover:bg-slate-50 hover:text-[#1c4532]"}`}>
                 <div className="flex items-center gap-4">
                   <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-                  <span className={`text-xs font-bold uppercase tracking-wider ${isActive ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}>{tab.label}</span>
+                  <span className={`text-xs font-black uppercase tracking-wider ${isActive ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}>{tab.label}</span>
                   {(tab as any).badge > 0 && (
-                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>{(tab as any).badge}</span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>{(tab as any).badge}</span>
                   )}
                 </div>
                 {isActive && <ChevronRight size={14} className="animate-in slide-in-from-left-2" />}
               </button>
             );
           })}
-          <button onClick={() => { setShowBroadcast(true); setIsSidebarOpen(false); }}
-            className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl transition-all duration-300 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 group mt-2">
-            <div className="flex items-center gap-4">
-              <Send size={18} strokeWidth={2} />
-              <span className="text-xs font-bold uppercase tracking-wider opacity-80 group-hover:opacity-100">Broadcast</span>
-            </div>
-          </button>
+          <div className="pt-2">
+            <button onClick={() => { setShowBroadcast(true); setIsSidebarOpen(false); }}
+              className="w-full flex items-center justify-between px-5 py-3 rounded-xl transition-all duration-200 text-slate-500 hover:bg-[#f0fdf4] hover:text-[#1c4532] group">
+              <div className="flex items-center gap-4">
+                <Send size={18} strokeWidth={2} />
+                <span className="text-xs font-black uppercase tracking-wider opacity-80 group-hover:opacity-100">Broadcast</span>
+              </div>
+            </button>
+          </div>
         </nav>
 
-        <div className="p-6 shrink-0">
-          <button onClick={() => setShowLogout(true)} className="w-full flex items-center justify-center gap-3 px-4 py-4 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all font-bold text-[10px] uppercase tracking-widest border border-slate-100 hover:border-red-100 group">
-            <LogOut size={16} className="group-hover:-translate-x-1 transition-transform" /><span>Sign Out</span>
+        {/* Sidebar Footer Card */}
+        {isInstallable && (
+          <div className="p-4 mt-auto">
+            <div className="bg-[#f0fdf4] rounded-2xl p-5 border border-[#dcfce7] relative overflow-hidden">
+              <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center mb-3 shadow-sm">
+                <Smartphone size={18} className="text-[#1c4532]" />
+              </div>
+              <p className="text-xs font-black text-[#1c4532] uppercase tracking-tight mb-1">EcoRoute Mobile</p>
+              <p className="text-[10px] text-[#4b7a63] font-bold leading-relaxed mb-3">Monitor local logistics on the go.</p>
+              <button 
+                onClick={handleInstallApp}
+                className="w-full py-2.5 bg-[#1c4532] text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#2d5a45] transition-all"
+              >
+                Get the App <ArrowUpRight size={14}/>
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 pt-0 shrink-0">
+          <button onClick={() => setShowLogout(true)} className="w-full flex items-center gap-4 px-5 py-3.5 rounded-xl text-red-500 hover:bg-red-50 transition-all font-black text-[10px] uppercase tracking-widest group">
+            <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" /><span>Sign Out</span>
           </button>
         </div>
       </aside>
@@ -408,41 +452,55 @@ export default function Page() {
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2.5 bg-white text-slate-600 rounded-xl border border-slate-200 shadow-sm active:scale-95 transition-all">
               <Menu size={20} />
             </button>
-            <div>
+            <div className="hidden sm:block">
               <div className="flex items-center gap-2 mb-0.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.15em]">{profile?.municipality} · System Live</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-[#1c4532] animate-pulse" />
+                <p className="text-[9px] font-black text-[#1c4532] uppercase tracking-[0.2em]">{profile?.municipality} · Operational</p>
               </div>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight uppercase">{currentLabel}</h2>
+              <h2 className="text-base font-black text-slate-900 tracking-tight leading-tight uppercase">{currentLabel}</h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200 w-64">
+              <Search size={14} className="text-slate-400" />
+              <input 
+                placeholder={`Search ${currentLabel.toLowerCase()}…`}
+                className="bg-transparent border-none outline-none text-xs font-bold text-slate-700 w-full placeholder:text-slate-400"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+
             {/* Bell */}
-            <div ref={notifRef} style={{ position:"relative" }}>
+            <div ref={notifRef} className="relative">
               <button onClick={() => setNotifOpen(o => !o)}
-                className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all relative ${notifOpen ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-200 hover:border-emerald-200"}`}>
-                <Bell size={17} color={notifOpen ? "#059669" : "#64748b"} />
+                className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all relative ${notifOpen ? "bg-[#f0fdf4] border-[#1c4532]/20" : "bg-white border-slate-200 hover:border-[#1c4532]/20"}`}>
+                <Bell size={18} className={notifOpen ? "text-[#1c4532]" : "text-slate-500"} />
                 {unreadC > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
-                    {unreadC > 9 ? "9+" : unreadC}
-                  </span>
+                  <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-red-500 border-2 border-white shadow-sm" />
                 )}
               </button>
               {notifOpen && <NotifPanel notifs={notifs} onRead={markRead} onClose={() => setNotifOpen(false)} />}
             </div>
 
+            <div className="w-px h-8 bg-slate-200 mx-1" />
+
             {/* Profile badge */}
             <button onClick={() => setShowProfile(true)}
-              className={`flex items-center gap-3 p-1.5 pr-4 rounded-xl border transition-all duration-200 ${showProfile ? "bg-slate-900 border-slate-800 shadow-lg" : "bg-white border-slate-200 hover:border-emerald-300 shadow-sm"}`}>
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center overflow-hidden border transition-all ${showProfile ? "border-emerald-500/60 scale-105" : "border-slate-100"} bg-emerald-600`}>
-                <span className="font-black text-white text-sm uppercase">{(profile?.full_name ?? "L").charAt(0)}</span>
+              className={`flex items-center gap-3 p-1.5 pr-4 rounded-xl border transition-all duration-200 ${showProfile ? "bg-slate-900 border-slate-800 shadow-lg" : "bg-white border-slate-200 hover:border-[#1c4532]/30 shadow-sm"}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center overflow-hidden border transition-all ${showProfile ? "border-[#1c4532]/60 scale-105" : "border-slate-100"} bg-[#1c4532]`}>
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-black text-white text-xs uppercase">{(profile?.full_name ?? "L").charAt(0)}</span>
+                )}
               </div>
               <div className="text-left hidden md:block">
-                <p className={`text-[11px] font-bold uppercase tracking-tight transition-colors ${showProfile ? "text-white" : "text-slate-900"}`}>{profile?.full_name ?? "LGU Official"}</p>
+                <p className={`text-[10px] font-black uppercase tracking-tight transition-colors ${showProfile ? "text-white" : "text-slate-900"}`}>{profile?.full_name ?? "LGU Official"}</p>
                 <div className="flex items-center gap-1.5">
-                  <ShieldCheck size={10} className={showProfile ? "text-emerald-400" : "text-emerald-600"} />
-                  <p className={`text-[9px] font-bold uppercase tracking-widest ${showProfile ? "text-emerald-400/80" : "text-slate-500"}`}>{profile?.position_title ?? "LGU Officer"}</p>
+                  <ShieldCheck size={10} className={showProfile ? "text-[#f0fdf4]" : "text-[#1c4532]"} />
+                  <p className={`text-[8px] font-black uppercase tracking-widest ${showProfile ? "text-emerald-400/80" : "text-slate-500"}`}>{profile?.position_title ?? "LGU Officer"}</p>
                 </div>
               </div>
             </button>
@@ -450,104 +508,125 @@ export default function Page() {
         </header>
 
         {/* ── SCROLLABLE CONTENT ── */}
-        <div className="flex-1 overflow-y-auto">
-          <div style={{ maxWidth:1200, margin:"0 auto", padding:"24px 20px" }}>
-            <div style={{ marginBottom:24, animation:"fadeUp .4s ease both" }}>
-              <h1 style={{ fontSize:"clamp(20px,5vw,28px)", fontWeight:900, color:EM[900], margin:0, letterSpacing:"-.02em", fontFamily:"Georgia,serif" }}>Barangay {profile?.barangay}</h1>
-              <p style={{ fontSize:13, color:EM[700], margin:"3px 0 0" }}>{profile?.municipality} · {profile?.position_title} · {citizens.length} registered citizens</p>
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
+          <div style={{ maxWidth:1200, margin:"0 auto", padding:"32px 24px" }}>
+            
+            <div className="mb-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-baseline gap-3 mb-1">
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Barangay {profile?.barangay}</h1>
+                <span className="px-2.5 py-1 bg-[#f0fdf4] text-[#1c4532] text-[10px] font-black uppercase tracking-widest rounded-lg border border-[#1c4532]/10">LGU Node</span>
+              </div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{profile?.municipality} · {profile?.position_title} · {citizens.length} Registry Entries</p>
             </div>
 
-            {/* Stat cards */}
-            <div className="sgrid" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:14, marginBottom:24 }}>
-              <StatCard icon={Users}         label="Citizens"         value={citizens.length}                                       sub={`${citizens.filter(c=>!c.is_archived).length} active`} accent={EM[600]}   delay={0}/>
-              <StatCard icon={AlertTriangle} label="Pending Viol."    value={pendingV}                                              sub="Need review"           accent="#d97706" delay={.05} warn={pendingV>0}/>
-              <StatCard icon={Flag}          label="Pending Reports"  value={pendingRep}                                            sub="Citizen reports"       accent="#8b5cf6" delay={.08} warn={pendingRep>0}/>
-              <StatCard icon={ShieldAlert}   label="Active Warnings"  value={activeW}                                               sub="Citizens warned"       accent="#dc2626" delay={.1}  warn={activeW>0}/>
-              <StatCard icon={Calendar}      label="Schedules"        value={schedules.filter(s=>s.is_active).length}               sub="Active routes"         accent={EM[600]}  delay={.13}/>
-              <StatCard icon={TrendingUp}    label="Compliance"       value={`${compliance}%`}                                      sub="RA 9003 adherence"     accent={compliance>=70?EM[600]:"#d97706"} delay={.16}/>
-            </div>
-
-            {/* Panel */}
-            <div style={{ background:"#fff", borderRadius:18, border:`1.5px solid ${EM[100]}`, boxShadow:"0 4px 24px rgba(6,78,59,.07)", overflow:"hidden", animation:"fadeUp .5s ease .2s both" }}>
+            {/* Main Panel Content */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-700">
 
               {/* Toolbar */}
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 18px", borderBottom:`1px solid ${EM[100]}`, flexWrap:"wrap", gap:8 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50 gap-4 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
                   {(activeTab === "violations" || activeTab === "reports") && (
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ fontSize:12, padding:"7px 10px", border:`1.5px solid ${EM[100]}`, borderRadius:9, background:EM[50], color:EM[800], outline:"none", cursor:"pointer" }}>
-                      <option value="all">All statuses</option>
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="text-[11px] font-bold uppercase tracking-wider py-2 px-3 border border-slate-200 rounded-xl bg-white text-slate-700 outline-none cursor-pointer focus:border-[#1c4532] transition-all shadow-sm">
+                      <option value="all">Status: All</option>
                       {activeTab === "violations" && <><option value="Pending">Pending</option><option value="Under Review">Under Review</option><option value="Resolved">Resolved</option></>}
                       {activeTab === "reports" && <><option value="Submitted">Submitted</option><option value="Under Review">Under Review</option><option value="Escalated">Escalated</option><option value="Dismissed">Dismissed</option><option value="Resolved">Resolved</option></>}
                     </select>
                   )}
                   {activeTab === "citizens" && (
-                    <select value={citizenFilter} onChange={e => setCitizenFilter(e.target.value)} style={{ fontSize:12, padding:"7px 10px", border:`1.5px solid ${EM[100]}`, borderRadius:9, background:EM[50], color:EM[800], outline:"none", cursor:"pointer" }}>
-                      <option value="all">All citizens</option>
-                      <option value="warnings">With warnings</option>
-                      <option value="violations">With violations</option>
-                      <option value="archived">Archived</option>
+                    <select value={citizenFilter} onChange={e => setCitizenFilter(e.target.value)} className="text-[11px] font-bold uppercase tracking-wider py-2 px-3 border border-slate-200 rounded-xl bg-white text-slate-700 outline-none cursor-pointer focus:border-[#1c4532] transition-all shadow-sm">
+                      <option value="all">Category: All</option>
+                      <option value="warnings">With Warnings</option>
+                      <option value="violations">With Violations</option>
+                      <option value="archived">Archived Records</option>
                     </select>
                   )}
                   {activeTab === "schedules" && (
-                    <button onClick={() => { setEditSchedule(undefined); setShowSchedule(true); }} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, fontWeight:700, padding:"7px 14px", borderRadius:9, background:EM[600], color:"#fff", border:"none", cursor:"pointer" }}>
+                    <button onClick={() => { setEditSchedule(undefined); setShowSchedule(true); }} className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest py-2 px-4 rounded-xl bg-[#1c4532] text-white border-none cursor-pointer hover:bg-[#2d5a45] transition-all shadow-md shadow-[#1c4532]/10 active:scale-95">
                       <Calendar size={13} /> + New Schedule
                     </button>
                   )}
-                  {(["citizens","violations","reports","broadcasts"] as const).includes(activeTab as any) && (
-                    <div style={{ position:"relative" }}>
-                      <Search size={13} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"#9ca3af" }}/>
-                      <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft:30, paddingRight:10, paddingTop:7, paddingBottom:7, border:`1.5px solid ${EM[100]}`, borderRadius:9, fontSize:12, color:EM[900], outline:"none", width:150, background:EM[50] }}/>
-                    </div>
-                  )}
-                  <button onClick={fetchData} className="act-btn" style={{ padding:"7px 9px", border:`1.5px solid ${EM[100]}`, borderRadius:9, background:EM[50], cursor:"pointer" }}>
-                    <RefreshCw size={13} color={EM[600]} />
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <button onClick={fetchData} className="w-10 h-10 border border-slate-200 rounded-xl bg-white text-[#1c4532] flex items-center justify-center hover:bg-slate-50 transition-all active:scale-90">
+                    <RefreshCw size={15} />
                   </button>
                 </div>
               </div>
 
               {/* ── CITIZENS TAB ── */}
               {activeTab === "citizens" && (
-                <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
-                    <thead><tr style={{ background:EM[50] }}>
-                      {["Citizen","Location","Contact","Warnings","Score","Violations","Status",""].map(h => (
-                        <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:10, fontWeight:800, color:EM[600], letterSpacing:".08em", textTransform:"uppercase", borderBottom:`1px solid ${EM[100]}`, whiteSpace:"nowrap" }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {filtCitizens.length === 0
-                        ? <tr><td colSpan={8} style={{ textAlign:"center", padding:48, color:"#9ca3af", fontSize:13 }}>No citizens found</td></tr>
-                        : filtCitizens.map(c => {
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse min-w-[800px]">
+                    <thead>
+                      <tr className="bg-slate-50/80 text-left">
+                        {["Citizen Node","Location","Contact","Alerts","Integrity","Breaches","Status",""].map(h => (
+                          <th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] border-b border-slate-100">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filtCitizens.length === 0 ? (
+                        <tr><td colSpan={8} className="text-center py-20 text-slate-400 text-xs font-bold uppercase tracking-widest">No registry matches found</td></tr>
+                      ) : (
+                        filtCitizens.map(c => {
                           const vCount = c.violations?.length ?? 0;
                           const pendC  = c.violations?.filter(v => v.status !== "Resolved").length ?? 0;
                           return (
-                            <tr key={c.id} className="row-hover" onClick={() => setSelectedCitizen(c)} style={{ borderBottom:`1px solid ${EM[50]}`, background:"#fff" }}>
-                              <td style={{ padding:"12px 16px" }}>
-                                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                                  <div style={{ width:34, height:34, borderRadius:"50%", background:c.is_archived?"#f1f5f9":EM[100], display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:800, color:c.is_archived?"#9ca3af":EM[700], flexShrink:0 }}>{(c.full_name ?? "?").charAt(0).toUpperCase()}</div>
+                            <tr key={c.id} className="row-hover transition-colors group" onClick={() => setSelectedCitizen(c)}>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-4">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black uppercase border shadow-sm ${c.is_archived ? "bg-slate-100 border-slate-200 text-slate-400" : "bg-[#f0fdf4] border-[#1c4532]/10 text-[#1c4532]"}`}>
+                                    {(c.full_name ?? "?").charAt(0)}
+                                  </div>
                                   <div>
-                                    <div style={{ fontSize:13, fontWeight:600, color:c.is_archived?"#9ca3af":EM[900], textDecoration:c.is_archived?"line-through":"none" }}>{c.full_name ?? "—"}</div>
-                                    <div style={{ fontSize:11, color:"#9ca3af" }}>{c.email}</div>
+                                    <p className={`text-sm font-black tracking-tight uppercase leading-none mb-1 ${c.is_archived ? "text-slate-400 line-through" : "text-slate-900"}`}>{c.full_name ?? "—"}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter leading-none">{c.email}</p>
                                   </div>
                                 </div>
                               </td>
-                              <td style={{ padding:"12px 16px", fontSize:12, color:"#6b7280" }}><div style={{ fontWeight:600, color:EM[700] }}>{c.purok ?? "—"}</div><div style={{ color:"#9ca3af" }}>{c.address_street ?? ""}</div></td>
-                              <td style={{ padding:"12px 16px", fontSize:12, color:"#6b7280" }}>{c.contact_number ?? "—"}</td>
-                              <td style={{ padding:"12px 16px" }}><span style={{ fontSize:11, fontWeight:800, padding:"3px 9px", borderRadius:20, background:c.warning_count>=3?"#fef2f2":c.warning_count>0?"#fff7ed":EM[50], color:c.warning_count>=3?"#991b1b":c.warning_count>0?"#9a3412":EM[700] }}>{c.warning_count}</span></td>
-                              <td style={{ padding:"12px 16px" }}><span style={{ fontSize:13, fontWeight:800, color:scoreColor(c.score??100) }}>{c.score??100}</span><span style={{ fontSize:10, color:"#9ca3af" }}>/100</span></td>
-                              <td style={{ padding:"12px 16px" }}>
-                                {vCount > 0
-                                  ? <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-                                      <span style={{ fontSize:11, fontWeight:700, padding:"3px 9px", borderRadius:20, background:pendC>0?"#fef3c7":EM[50], color:pendC>0?"#92400e":EM[700] }}>{vCount} case{vCount!==1?"s":""}</span>
-                                      {pendC > 0 && <span style={{ width:6, height:6, borderRadius:"50%", background:"#f59e0b", animation:"pulse 2s infinite", display:"inline-block" }}/>}
-                                    </div>
-                                  : <span style={{ fontSize:11, color:"#d1d5db" }}>None</span>}
+                              <td className="px-6 py-4">
+                                <p className="text-[11px] font-black text-[#1c4532] uppercase tracking-tight">{c.purok ?? "—"}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{c.address_street ?? ""}</p>
                               </td>
-                              <td style={{ padding:"12px 16px" }}><span style={{ fontSize:11, fontWeight:700, padding:"3px 9px", borderRadius:20, background:c.is_archived?"#f1f5f9":EM[50], color:c.is_archived?"#6b7280":EM[700] }}>{c.is_archived?"Archived":"Active"}</span></td>
-                              <td style={{ padding:"12px 14px" }}><div style={{ width:28, height:28, borderRadius:8, background:EM[50], display:"flex", alignItems:"center", justifyContent:"center" }}><Search size={14} color={EM[600]}/></div></td>
+                              <td className="px-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-tighter">{c.contact_number ?? "—"}</td>
+                              <td className="px-6 py-4">
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest border ${c.warning_count >= 3 ? "bg-red-50 border-red-100 text-red-600" : c.warning_count > 0 ? "bg-orange-50 border-orange-100 text-orange-600" : "bg-slate-50 border-slate-100 text-slate-500"}`}>
+                                  {c.warning_count} Alerts
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-baseline gap-1">
+                                  <span className="text-sm font-black" style={{ color:scoreColor(c.score??100) }}>{c.score??100}</span>
+                                  <span className="text-[9px] font-bold text-slate-300 uppercase">/100</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                {vCount > 0 ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest border ${pendC > 0 ? "bg-amber-50 border-amber-100 text-amber-600" : "bg-[#f0fdf4] border-[#1c4532]/10 text-[#1c4532]"}`}>
+                                      {vCount} Transmissions
+                                    </span>
+                                    {pendC > 0 && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shadow-sm shadow-amber-200" />}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Clear</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest border ${c.is_archived ? "bg-slate-50 border-slate-100 text-slate-400" : "bg-[#f0fdf4] border-[#1c4532]/10 text-[#1c4532]"}`}>
+                                  {c.is_archived ? "Archived" : "Active"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-[#1c4532] group-hover:text-white transition-all">
+                                  <Search size={14} />
+                                </div>
+                              </td>
                             </tr>
                           );
-                        })}
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -555,33 +634,60 @@ export default function Page() {
 
               {/* ── VIOLATIONS TAB ── */}
               {activeTab === "violations" && (
-                <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:540 }}>
-                    <thead><tr style={{ background:EM[50] }}>
-                      {["Citizen","Type","Description","Status","Reported","Action"].map(h => (
-                        <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:10, fontWeight:800, color:EM[600], letterSpacing:".08em", textTransform:"uppercase", borderBottom:`1px solid ${EM[100]}`, whiteSpace:"nowrap" }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {filtViolations.length === 0
-                        ? <tr><td colSpan={6} style={{ textAlign:"center", padding:48, color:"#9ca3af", fontSize:13 }}>No violations found</td></tr>
-                        : filtViolations.map(v => {
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse min-w-[800px]">
+                    <thead>
+                      <tr className="bg-slate-50/80 text-left">
+                        {["Citizen Node","Violation Type","Protocol Details","Signal Status","Transmission","System Action"].map(h => (
+                          <th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] border-b border-slate-100">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filtViolations.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center py-20 text-slate-400 text-xs font-bold uppercase tracking-widest">No protocol breaches logged</td></tr>
+                      ) : (
+                        filtViolations.map(v => {
                           const sc = STATUS_CFG[v.status] ?? STATUS_CFG.Pending;
                           return (
-                            <tr key={v.id} className="row-hover" style={{ borderBottom:`1px solid ${EM[50]}`, background:"#fff" }}>
-                              <td style={{ padding:"12px 16px", fontSize:13, fontWeight:600, color:EM[900] }}>{v.citizen_name}</td>
-                              <td style={{ padding:"12px 16px" }}><span style={{ fontSize:11, fontWeight:700, padding:"3px 9px", borderRadius:20, background:"#fef3c7", color:"#92400e" }}>{v.type.replace(/_/g," ")}</span></td>
-                              <td style={{ padding:"12px 16px", fontSize:12, color:"#6b7280", maxWidth:200 }}><div style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.description ?? "—"}</div></td>
-                              <td style={{ padding:"12px 16px" }}><div style={{ display:"flex", alignItems:"center", gap:6 }}><div style={{ width:7, height:7, borderRadius:"50%", background:sc.dot }}/><span style={{ fontSize:12, fontWeight:600, color:sc.text }}>{sc.label}</span></div></td>
-                              <td style={{ padding:"12px 16px", fontSize:12, color:"#9ca3af", whiteSpace:"nowrap" }}>{timeAgo(v.created_at)}</td>
-                              <td style={{ padding:"12px 16px" }}>
-                                {v.status !== "Resolved" && profile
-                                  ? <button onClick={async () => { await supabase.from("violations").update({ status:"Resolved", resolved_at:new Date().toISOString() }).eq("id",v.id); await supabase.from("audit_logs").insert({ admin_id:profile.id, action_type:"LGU_RESOLVE_VIOLATION", target_id:v.id, reason:`Resolved by ${profile.full_name}` }); fetchData(); }} className="act-btn" style={{ fontSize:11, fontWeight:700, padding:"5px 11px", borderRadius:8, background:EM[50], color:EM[700], border:`1.5px solid ${EM[200]}`, cursor:"pointer" }}>✓ Resolve</button>
-                                  : <span style={{ fontSize:11, color:EM[500] }}>✓ Done</span>}
+                            <tr key={v.id} className="row-hover transition-colors">
+                              <td className="px-6 py-4 text-xs font-black text-slate-900 uppercase tracking-tight">{v.citizen_name}</td>
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest bg-amber-50 border border-amber-100 text-amber-700">
+                                  {v.type.replace(/_/g," ")}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 max-w-[240px]">
+                                <p className="text-[11px] font-bold text-slate-500 uppercase leading-relaxed truncate">{v.description ?? "—"}</p>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full" style={{ background:sc.dot }} />
+                                  <span className="text-[11px] font-black uppercase tracking-wider" style={{ color:sc.text }}>{sc.label}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-tighter whitespace-nowrap">{timeAgo(v.created_at)}</td>
+                              <td className="px-6 py-4">
+                                {v.status !== "Resolved" && profile ? (
+                                  <button 
+                                    onClick={async (e) => { 
+                                      e.stopPropagation();
+                                      await supabase.from("violations").update({ status:"Resolved", resolved_at:new Date().toISOString() }).eq("id",v.id); 
+                                      await supabase.from("audit_logs").insert({ admin_id:profile.id, action_type:"LGU_RESOLVE_VIOLATION", target_id:v.id, reason:`Resolved by ${profile.full_name}` }); 
+                                      fetchData(); 
+                                    }} 
+                                    className="px-3 py-1.5 bg-[#f0fdf4] text-[#1c4532] text-[10px] font-black uppercase tracking-widest rounded-lg border border-[#1c4532]/10 hover:bg-[#1c4532] hover:text-white transition-all active:scale-95"
+                                  >
+                                    ✓ Resolve Node
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] font-black text-[#1c4532] uppercase tracking-widest opacity-60">✓ Logged & Sync'd</span>
+                                )}
                               </td>
                             </tr>
                           );
-                        })}
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -589,32 +695,50 @@ export default function Page() {
 
               {/* ── REPORTS TAB ── */}
               {activeTab === "reports" && (
-                <div style={{ overflowX:"auto" }}>
-                  <div style={{ padding:"10px 18px", borderBottom:`1px solid ${EM[100]}`, fontSize:12, color:EM[700], background:EM[50] }}>
-                    ℹ️ Reporter identities are visible to you as LGU admin. They are hidden from reported citizens.
+                <div className="overflow-x-auto">
+                  <div className="px-6 py-3 bg-[#1c4532] text-white/90 text-[10px] font-black uppercase tracking-[0.15em] flex items-center gap-3">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    Encrypted Protocol: Reporter identities are visible to LGU nodes only.
                   </div>
-                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
-                    <thead><tr style={{ background:EM[50] }}>
-                      {["Reporter","Reported Citizen","Type","Status","Filed","Action"].map(h => (
-                        <th key={h} style={{ padding:"10px 16px", textAlign:"left", fontSize:10, fontWeight:800, color:EM[600], letterSpacing:".08em", textTransform:"uppercase", borderBottom:`1px solid ${EM[100]}`, whiteSpace:"nowrap" }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {filtReports.length === 0
-                        ? <tr><td colSpan={6} style={{ textAlign:"center", padding:48, color:"#9ca3af", fontSize:13 }}>No reports found</td></tr>
-                        : filtReports.map(r => {
+                  <table className="w-full border-collapse min-w-[800px]">
+                    <thead>
+                      <tr className="bg-slate-50/80 text-left">
+                        {["Reporter Node","Subject Node","Transmission Type","Status","Signal","Log"].map(h => (
+                          <th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] border-b border-slate-100">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filtReports.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center py-20 text-slate-400 text-xs font-bold uppercase tracking-widest">No inbound signals detected</td></tr>
+                      ) : (
+                        filtReports.map(r => {
                           const sc = STATUS_CFG[r.status] ?? STATUS_CFG.Submitted;
                           return (
-                            <tr key={r.id} className="row-hover" onClick={() => setSelectedReport(r)} style={{ borderBottom:`1px solid ${EM[50]}`, background:"#fff" }}>
-                              <td style={{ padding:"12px 16px", fontSize:13, fontWeight:600, color:EM[700] }}>{r.reporter_name}</td>
-                              <td style={{ padding:"12px 16px", fontSize:13, fontWeight:600, color:"#92400e" }}>{r.reported_name ?? "Unknown"}</td>
-                              <td style={{ padding:"12px 16px" }}><span style={{ fontSize:11, fontWeight:700, padding:"3px 9px", borderRadius:20, background:"#fef3c7", color:"#92400e" }}>{r.type.replace(/_/g," ")}</span></td>
-                              <td style={{ padding:"12px 16px" }}><div style={{ display:"flex", alignItems:"center", gap:6 }}><div style={{ width:7, height:7, borderRadius:"50%", background:sc.dot }}/><span style={{ fontSize:12, fontWeight:600, color:sc.text }}>{sc.label}</span></div></td>
-                              <td style={{ padding:"12px 16px", fontSize:12, color:"#9ca3af", whiteSpace:"nowrap" }}>{timeAgo(r.created_at)}</td>
-                              <td style={{ padding:"12px 14px" }}><div style={{ width:28, height:28, borderRadius:8, background:EM[50], display:"flex", alignItems:"center", justifyContent:"center" }}><Search size={14} color={EM[600]}/></div></td>
+                            <tr key={r.id} className="row-hover transition-colors group" onClick={() => setSelectedReport(r)}>
+                              <td className="px-6 py-4 text-xs font-black text-[#1c4532] uppercase tracking-tight">{r.reporter_name}</td>
+                              <td className="px-6 py-4 text-xs font-black text-orange-700 uppercase tracking-tight">{r.reported_name ?? "Unknown Node"}</td>
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest bg-slate-50 border border-slate-100 text-slate-600">
+                                  {r.type.replace(/_/g," ")}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full" style={{ background:sc.dot }} />
+                                  <span className="text-[11px] font-black uppercase tracking-wider" style={{ color:sc.text }}>{sc.label}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-tighter whitespace-nowrap">{timeAgo(r.created_at)}</td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-[#1c4532] group-hover:text-white transition-all mx-auto">
+                                  <Search size={14} />
+                                </div>
+                              </td>
                             </tr>
                           );
-                        })}
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -622,137 +746,211 @@ export default function Page() {
 
               {/* ── SCHEDULES TAB ── */}
               {activeTab === "schedules" && (
-                <div style={{ padding:20, display:"flex", flexDirection:"column", gap:12 }}>
-                  {schedules.length === 0
-                    ? <div style={{ textAlign:"center", padding:48 }}><Calendar size={36} color={EM[200]} style={{ margin:"0 auto 12px" }}/><p style={{ color:"#9ca3af", fontSize:13 }}>No schedules yet. Create the first one!</p></div>
-                    : schedules.map(s => (
-                      <div key={s.id} style={{ padding:"16px 18px", borderRadius:12, background:s.is_active?"#fff":EM[50], border:`1.5px solid ${s.is_active?EM[200]:EM[100]}`, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
-                        <div style={{ width:48, height:48, borderRadius:12, background:s.is_active?EM[100]:"#f1f5f9", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                          <div style={{ fontSize:11, fontWeight:800, color:s.is_active?EM[700]:"#9ca3af" }}>{s.day_of_week !== null ? DAYS[s.day_of_week] : "One-off"}</div>
-                          <div style={{ fontSize:10, color:s.is_active?EM[600]:"#9ca3af" }}>{fmtTime(s.scheduled_time)}</div>
-                        </div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:700, color:s.is_active?EM[900]:"#9ca3af" }}>{s.label}</div>
-                          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:5 }}>
-                            {s.waste_types.map(t => <span key={t} style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20, background:EM[50], color:EM[700] }}>{t}</span>)}
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {schedules.length === 0 ? (
+                    <div className="col-span-2 text-center py-20">
+                      <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                        <Calendar size={28} className="text-slate-300" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">No collection nodes configured</p>
+                    </div>
+                  ) : (
+                    schedules.map(s => (
+                      <div key={s.id} className={`p-6 rounded-2xl border transition-all duration-300 ${s.is_active ? "bg-white border-[#1c4532]/20 shadow-sm" : "bg-slate-50 border-slate-100 grayscale-[0.5]"}`}>
+                        <div className="flex items-start gap-5">
+                          <div className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center shrink-0 border ${s.is_active ? "bg-[#f0fdf4] border-[#1c4532]/10" : "bg-white border-slate-100"}`}>
+                            <p className={`text-[11px] font-black uppercase ${s.is_active ? "text-[#1c4532]" : "text-slate-400"}`}>{s.day_of_week !== null ? DAYS[s.day_of_week] : "FIXED"}</p>
+                            <p className={`text-[9px] font-bold uppercase mt-1 ${s.is_active ? "text-emerald-600/60" : "text-slate-300"}`}>{fmtTime(s.scheduled_time)}</p>
                           </div>
-                          {s.collection_area && <div style={{ fontSize:11, color:EM[600], marginTop:3 }}>📍 {s.collection_area}</div>}
-                          {s.notes && <div style={{ fontSize:11, color:"#9ca3af", marginTop:2 }}>{s.notes}</div>}
+                          <div className="flex-1 min-w-0">
+                            <h4 className={`text-sm font-black uppercase tracking-tight mb-2 ${s.is_active ? "text-slate-900" : "text-slate-400"}`}>{s.label}</h4>
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              {s.waste_types.map(t => (
+                                <span key={t} className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest ${s.is_active ? "bg-[#1c4532] text-white" : "bg-slate-200 text-slate-500"}`}>{t}</span>
+                              ))}
+                            </div>
+                            {s.collection_area && <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#1c4532]/70 uppercase mb-1">📍 {s.collection_area}</div>}
+                            {s.notes && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight leading-relaxed italic">{s.notes}</p>}
+                          </div>
                         </div>
-                        <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                          <button onClick={() => { setEditSchedule(s); setShowSchedule(true); }} style={{ fontSize:11, fontWeight:700, padding:"5px 11px", borderRadius:8, background:EM[50], color:EM[700], border:`1.5px solid ${EM[200]}`, cursor:"pointer" }}>Edit</button>
-                          <button onClick={() => toggleSchedule(s.id, s.is_active)} style={{ fontSize:11, fontWeight:700, padding:"5px 11px", borderRadius:8, background:s.is_active?"#fff7ed":"#f0fdf4", color:s.is_active?"#d97706":EM[700], border:`1.5px solid ${s.is_active?"#fde68a":EM[200]}`, cursor:"pointer" }}>{s.is_active?"Pause":"Activate"}</button>
-                          <button onClick={() => deleteSchedule(s.id)} style={{ fontSize:11, fontWeight:700, padding:"5px 11px", borderRadius:8, background:"#fef2f2", color:"#dc2626", border:"1.5px solid #fecaca", cursor:"pointer" }}>Delete</button>
+                        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-100">
+                          <button onClick={() => { setEditSchedule(s); setShowSchedule(true); }} className="flex-1 py-2 bg-slate-50 text-slate-600 text-[9px] font-black uppercase tracking-[0.2em] rounded-lg hover:bg-slate-100 transition-all border border-slate-100">Config</button>
+                          <button onClick={() => toggleSchedule(s.id, s.is_active)} className={`flex-1 py-2 text-[9px] font-black uppercase tracking-[0.2em] rounded-lg transition-all border ${s.is_active ? "bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100" : "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"}`}>
+                            {s.is_active ? "Suspend" : "Activate"}
+                          </button>
+                          <button onClick={() => deleteSchedule(s.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-100"><RefreshCw size={14} className="rotate-45" /></button>
                         </div>
                       </div>
-                    ))}
+                    ))
+                  )}
                 </div>
               )}
 
               {/* ── BROADCASTS TAB ── */}
               {activeTab === "broadcasts" && (
-                <div style={{ padding:20, display:"flex", flexDirection:"column", gap:12 }}>
-                  {broadcasts.length === 0
-                    ? <div style={{ textAlign:"center", padding:48 }}><Megaphone size={36} color={EM[200]} style={{ margin:"0 auto 12px" }}/><p style={{ color:"#9ca3af", fontSize:13 }}>No broadcasts yet.</p></div>
-                    : broadcasts
+                <div className="p-8 space-y-4">
+                  {broadcasts.length === 0 ? (
+                    <div className="text-center py-20">
+                      <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                        <Megaphone size={28} className="text-slate-300" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">No network broadcasts transmitted</p>
+                    </div>
+                  ) : (
+                    broadcasts
                         .filter(b => !b.expires_at || new Date(b.expires_at) > new Date())
                         .filter(b => (b.title + b.body).toLowerCase().includes(search.toLowerCase()))
                         .map(b => {
                           const bt = BROADCAST_TYPES.find(t => t.id === b.type);
                           return (
-                            <div key={b.id} style={{ padding:"16px 18px", borderRadius:12, background:"#fff", border:`1.5px solid ${EM[b.is_pinned?200:100]}`, display:"flex", gap:14, alignItems:"flex-start" }}>
-                              <div style={{ width:40, height:40, borderRadius:10, background:EM[50], display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{bt?.icon ?? "📢"}</div>
-                              <div style={{ flex:1, minWidth:0 }}>
-                                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
-                                  <span style={{ fontSize:14, fontWeight:700, color:EM[900] }}>{b.title}</span>
-                                  {b.is_pinned && <span style={{ fontSize:10, fontWeight:800, padding:"1px 7px", borderRadius:20, background:EM[100], color:EM[700] }}>📌 Pinned</span>}
-                                  <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20, background:EM[50], color:EM[600] }}>{bt?.label ?? b.type}</span>
-                                  <span style={{ fontSize:11, color:"#9ca3af", marginLeft:"auto" }}>{timeAgo(b.created_at)}</span>
+                            <div key={b.id} className={`p-6 rounded-2xl border transition-all duration-300 ${b.is_pinned ? "bg-[#f0fdf4] border-[#1c4532]/20" : "bg-white border-slate-100"}`}>
+                              <div className="flex gap-5">
+                                <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center text-xl shrink-0 border border-slate-100 shadow-sm">{bt?.icon ?? "📢"}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                    <h4 className="text-sm font-black uppercase tracking-tight text-slate-900">{b.title}</h4>
+                                    {b.is_pinned && <span className="text-[9px] font-black px-2 py-0.5 bg-[#1c4532] text-white rounded-md uppercase tracking-widest">📌 Essential</span>}
+                                    <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md uppercase tracking-widest">{bt?.label ?? b.type}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter ml-auto">{timeAgo(b.created_at)}</span>
+                                  </div>
+                                  <p className="text-[12px] font-medium text-slate-600 leading-relaxed uppercase tracking-tight">{b.body}</p>
                                 </div>
-                                <p style={{ fontSize:13, color:"#374151", margin:0, lineHeight:1.6 }}>{b.body}</p>
                               </div>
                             </div>
                           );
-                        })}
+                        })
+                  )}
                 </div>
               )}
 
               {/* ── OVERVIEW TAB ── */}
               {activeTab === "overview" && (
-                <div style={{ padding:22, display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:18 }}>
-                  {/* Compliance */}
-                  <div style={{ background:EM[50], borderRadius:14, padding:20, border:`1px solid ${EM[100]}` }}>
-                    <div style={{ fontSize:11, fontWeight:800, color:EM[700], letterSpacing:".1em", textTransform:"uppercase", marginBottom:14 }}>RA 9003 Compliance</div>
-                    <div style={{ fontSize:44, fontWeight:900, color:compliance>=80?EM[600]:compliance>=50?"#d97706":"#dc2626", fontFamily:"Georgia,serif", lineHeight:1 }}>{compliance}%</div>
-                    <div style={{ fontSize:12, color:"#6b7280", marginTop:5, marginBottom:12 }}>of citizens have zero warnings</div>
-                    <div style={{ height:8, borderRadius:4, background:"#e5e7eb" }}><div style={{ height:"100%", width:`${compliance}%`, borderRadius:4, background:`linear-gradient(90deg,${EM[500]},${EM[400]})`, transition:"width .6s" }}/></div>
-                    <p style={{ fontSize:12, color:EM[700], lineHeight:1.6, padding:"10px 12px", borderRadius:9, background:"#fff", border:`1px solid ${EM[100]}`, marginTop:12, marginBottom:0 }}>Citizens with 3+ warnings may be escalated under RA 9003 Sec. 49.</p>
-                  </div>
-                  {/* Violations breakdown */}
-                  <div style={{ background:EM[50], borderRadius:14, padding:20, border:`1px solid ${EM[100]}` }}>
-                    <div style={{ fontSize:11, fontWeight:800, color:EM[700], letterSpacing:".1em", textTransform:"uppercase", marginBottom:14 }}>Violation Breakdown</div>
-                    {[
-                      {label:"Pending",      val:violations.filter(v=>v.status==="Pending").length,      color:"#f59e0b"},
-                      {label:"Under Review", val:violations.filter(v=>v.status==="Under Review").length,  color:"#3b82f6"},
-                      {label:"Resolved",     val:violations.filter(v=>v.status==="Resolved").length,      color:EM[600]},
-                    ].map(s => (
-                      <div key={s.label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid ${EM[100]}` }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}><div style={{ width:8, height:8, borderRadius:"50%", background:s.color }}/><span style={{ fontSize:13, color:"#374151" }}>{s.label}</span></div>
-                        <span style={{ fontSize:17, fontWeight:900, color:s.color, fontFamily:"Georgia,serif" }}>{s.val}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Score distribution */}
-                  <div style={{ background:EM[50], borderRadius:14, padding:20, border:`1px solid ${EM[100]}` }}>
-                    <div style={{ fontSize:11, fontWeight:800, color:EM[700], letterSpacing:".1em", textTransform:"uppercase", marginBottom:14 }}>Score Distribution</div>
-                    {[
-                      {label:"Excellent (90–100)", val:citizens.filter(c=>(c.score??100)>=90).length,                                    color:EM[600]},
-                      {label:"Good (70–89)",        val:citizens.filter(c=>(c.score??100)>=70&&(c.score??100)<90).length,                 color:"#059669"},
-                      {label:"Fair (50–69)",         val:citizens.filter(c=>(c.score??100)>=50&&(c.score??100)<70).length,                 color:"#d97706"},
-                      {label:"Poor (< 50)",          val:citizens.filter(c=>(c.score??100)<50).length,                                    color:"#dc2626"},
-                    ].map(s => (
-                      <div key={s.label} style={{ marginBottom:10 }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                          <span style={{ fontSize:12, color:"#374151" }}>{s.label}</span>
-                          <span style={{ fontSize:12, fontWeight:700, color:s.color }}>{s.val}</span>
-                        </div>
-                        <div style={{ height:5, borderRadius:3, background:"#e5e7eb" }}>
-                          <div style={{ height:"100%", width:citizens.length>0?`${(s.val/citizens.length)*100}%`:"0%", borderRadius:3, background:s.color, transition:"width .6s" }}/>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Next steps */}
-                  <div style={{ background:"#fffbeb", borderRadius:14, padding:20, border:"1px solid #fde68a" }}>
-                    <div style={{ fontSize:11, fontWeight:800, color:"#92400e", letterSpacing:".1em", textTransform:"uppercase", marginBottom:14, display:"flex", alignItems:"center", gap:7 }}>
-                      <Lightbulb size={13} color="#d97706"/>Next Steps
+                <div className="p-8 flex flex-col gap-8">
+                  {/* Stat cards - Horizontally scrollable on mobile */}
+                  <div className="overflow-x-auto no-scrollbar -mx-6 px-6 pb-4">
+                    <div className="flex md:grid md:grid-cols-3 lg:grid-cols-6 gap-4 w-max md:w-full">
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={Users}         label="Citizens"         value={citizens.length}                                       sub={`${citizens.filter(c=>!c.is_archived).length} Active`} accent="#1c4532" delay={0}/>
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={AlertTriangle} label="Pending Viol."    value={pendingV}                                              sub="Action Required"        accent="#d97706" delay={.05} warn={pendingV>0}/>
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={Flag}          label="Pending Reports"  value={pendingRep}                                            sub="Inbound Signals"        accent="#8b5cf6" delay={.08} warn={pendingRep>0}/>
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={ShieldAlert}   label="Active Warnings"  value={activeW}                                               sub="Protocol Alerts"        accent="#dc2626" delay={.1}  warn={activeW>0}/>
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={Calendar}      label="Schedules"        value={schedules.filter(s=>s.is_active).length}               sub="Active Routes"          accent="#1c4532" delay={.13}/>
+                      <StatCard className="w-[280px] md:w-auto shrink-0" icon={TrendingUp}    label="Compliance"       value={`${compliance}%`}                                      sub="RA 9003 Index"          accent={compliance>=70?"#1c4532":"#d97706"} delay={.16}/>
                     </div>
-                    {[
-                      {icon:"🔔",title:"Push Notifications",  desc:"Set up VAPID keys + service worker to deliver browser push for all in-app notifications."},
-                      {icon:"📊",title:"Purok Analytics",      desc:"Track waste generation per purok. Identify high-waste zones for targeted campaigns."},
-                      {icon:"🏆",title:"Citizen Leaderboard",  desc:"Show top 10 compliant citizens per month (by score). Gamify RA 9003 compliance."},
-                      {icon:"📅",title:"Schedule Reminders",   desc:"Edge Function cron: send COLLECTION_REMINDER to assigned driver 30 min before schedule."},
-                    ].map(f => (
-                      <div key={f.title} style={{ display:"flex", gap:10, marginBottom:11 }}>
-                        <span style={{ fontSize:17, flexShrink:0 }}>{f.icon}</span>
-                        <div><div style={{ fontSize:12, fontWeight:700, color:"#78350f", marginBottom:2 }}>{f.title}</div><p style={{ fontSize:11, color:"#92400e", margin:0, lineHeight:1.5 }}>{f.desc}</p></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Compliance */}
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-[#1c4532] uppercase tracking-[0.2em] mb-4">RA 9003 Compliance Index</p>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="text-5xl font-black tracking-tighter" style={{ color:compliance>=80?"#1c4532":compliance>=50?"#d97706":"#dc2626" }}>{compliance}%</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Adherence</span>
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-tight mb-5 leading-relaxed">of resident nodes maintain a zero-warning integrity score.</p>
+                    <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden mb-6">
+                      <div className="h-full bg-[#1c4532] rounded-full transition-all duration-1000 ease-out" style={{ width:`${compliance}%` }} />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-600 leading-relaxed uppercase italic">Protocol Reminder: Citizens with 3+ breaches must be escalated under RA 9003 Sec. 49.</p>
+                    </div>
+                  </div>
+
+                  {/* Violations breakdown */}
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Breach Signal Breakdown</p>
+                    <div className="space-y-4">
+                      {[
+                        {label:"Pending Alert",      val:violations.filter(v=>v.status==="Pending").length,      color:"#f59e0b"},
+                        {label:"In Processing",      val:violations.filter(v=>v.status==="Under Review").length,  color:"#3b82f6"},
+                        {label:"Resolved Logs",      val:violations.filter(v=>v.status==="Resolved").length,      color:"#1c4532"},
+                      ].map(s => (
+                        <div key={s.label} className="flex justify-between items-center pb-3 border-b border-slate-200/50 last:border-0">
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full shadow-sm" style={{ background:s.color }} />
+                            <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight">{s.label}</span>
+                          </div>
+                          <span className="text-xl font-black tracking-tight" style={{ color:s.color }}>{s.val}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Score distribution */}
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Integrity Distribution</p>
+                    <div className="space-y-4">
+                      {[
+                        {label:"Excellent (90–100)", val:citizens.filter(c=>(c.score??100)>=90).length,                                    color:"#1c4532"},
+                        {label:"Standard (70–89)",   val:citizens.filter(c=>(c.score??100)>=70&&(c.score??100)<90).length,                 color:"#059669"},
+                        {label:"Review (50–69)",     val:citizens.filter(c=>(c.score??100)>=50&&(c.score??100)<70).length,                 color:"#d97706"},
+                        {label:"Critical (< 50)",    val:citizens.filter(c=>(c.score??100)<50).length,                                    color:"#dc2626"},
+                      ].map(s => (
+                        <div key={s.label}>
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{s.label}</span>
+                            <span className="text-[11px] font-black" style={{ color:s.color }}>{s.val}</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width:citizens.length>0?`${(s.val/citizens.length)*100}%`:"0%", background:s.color }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* System Protocol Card */}
+                  <div className="col-span-1 md:col-span-2 lg:col-span-3 p-8 bg-slate-900 rounded-3xl text-white relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                      <ShieldCheck size={160} />
+                    </div>
+                    <div className="relative z-10 flex flex-col md:flex-row gap-10 items-center">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-[#1c4532] rounded-xl flex items-center justify-center border border-white/10 shadow-lg">
+                            <Lightbulb className="text-emerald-400" size={20} />
+                          </div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400">Node Optimization Strategies</p>
+                        </div>
+                        <h3 className="text-3xl font-black tracking-tight mb-4 leading-none">Enhance Local Ecosystem Governance</h3>
+                        <p className="text-slate-400 text-sm font-medium uppercase tracking-tight max-w-2xl leading-relaxed">Implement advanced telemetry and gamified compliance to drive RA 9003 adherence across Barangay {profile?.barangay}.</p>
                       </div>
-                    ))}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full md:w-auto shrink-0">
+                        {[
+                          {icon:"📡",title:"Live Telemetry", desc:"Real-time logistics tracking"},
+                          {icon:"🏆",title:"Leaderboards",   desc:"Compliance gamification"},
+                          {icon:"📊",title:"Spatial Data",   desc:"High-waste zone mapping"},
+                          {icon:"🔔",title:"Push Alerts",    desc:"Encrypted mobile signals"},
+                        ].map(f => (
+                          <div key={f.title} className="p-4 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-md">
+                            <div className="flex items-center gap-3 mb-1">
+                              <span className="text-lg">{f.icon}</span>
+                              <p className="text-[10px] font-black uppercase tracking-widest">{f.title}</p>
+                            </div>
+                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter leading-none">{f.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
             </div>
 
-            {/* RA 9003 footer */}
-            <div style={{ marginTop:20, padding:"16px 20px", borderRadius:14, background:`linear-gradient(135deg,${EM[800]},${EM[900]})`, border:`1px solid ${EM[700]}`, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap", animation:"fadeUp .5s ease .3s both" }}>
-              <FileText size={20} color={EM[200]} style={{ flexShrink:0 }}/>
-              <div style={{ flex:1, minWidth:200 }}>
-                <div style={{ fontSize:12, fontWeight:700, color:EM[200], marginBottom:2 }}>RA 9003 — Ecological Solid Waste Management Act of 2000</div>
-                <p style={{ fontSize:12, color:"rgba(167,243,208,.75)", margin:0, lineHeight:1.55 }}>You are responsible for enforcing waste segregation and collection schedules in Barangay {profile?.barangay}.</p>
+            {/* RA 9003 Statutory Footer */}
+            <div className="mt-10 p-8 rounded-3xl bg-[#1c4532] text-white border border-[#1c4532]/10 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-1000">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.05),transparent)] pointer-events-none" />
+              <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0 border border-white/10">
+                <FileText className="text-emerald-300" size={28} />
               </div>
-              <div style={{ textAlign:"center", flexShrink:0 }}>
-                <div style={{ fontSize:24, fontWeight:900, color:EM[300], fontFamily:"Georgia,serif" }}>{compliance}%</div>
-                <div style={{ fontSize:10, color:"rgba(167,243,208,.6)", fontWeight:700, textTransform:"uppercase", letterSpacing:".06em" }}>Compliant</div>
+              <div className="flex-1 text-center md:text-left">
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300 mb-2">Statutory Enforcement Protocol</p>
+                <h4 className="text-lg font-black tracking-tight mb-2 uppercase">RA 9003 — Ecological Solid Waste Management Act</h4>
+                <p className="text-sm font-medium text-emerald-100/70 tracking-tight leading-relaxed max-w-3xl uppercase italic">You are delegated with the executive authority to enforce waste segregation and synchronization of collection schedules within the jurisdiction of Barangay {profile?.barangay}.</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/10 text-center shrink-0 min-w-[140px]">
+                <p className="text-4xl font-black tracking-tighter mb-1">{compliance}%</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-emerald-400">Node Stability</p>
               </div>
             </div>
           </div>
@@ -769,14 +967,14 @@ export default function Page() {
           <div className="relative w-full max-w-sm bg-white rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-300 border border-slate-100">
             <div className="text-center">
               <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6"><LogOut size={32}/></div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">End Session?</h2>
-              <p className="text-xs font-medium text-slate-500 mb-8 leading-relaxed">You are about to sign out of the LGU portal.</p>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2 uppercase">End Protocol?</h2>
+              <p className="text-[10px] font-bold text-slate-500 mb-8 leading-relaxed uppercase tracking-widest">You are about to sign out of the LGU command center.</p>
               <div className="flex flex-col gap-3">
-                <button onClick={handleLogout} disabled={isLoggingOut} className="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-100 hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50">
-                  {isLoggingOut ? "Signing out…" : "Confirm & Sign Out"}
+                <button onClick={handleLogout} disabled={isLoggingOut} className="w-full py-4 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-100 hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50">
+                  {isLoggingOut ? "Processing…" : "Confirm Termination"}
                 </button>
-                <button onClick={() => setShowLogout(false)} disabled={isLoggingOut} className="w-full py-4 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
-                  Stay Active
+                <button onClick={() => setShowLogout(false)} disabled={isLoggingOut} className="w-full py-4 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
+                  Maintain Sync
                 </button>
               </div>
             </div>

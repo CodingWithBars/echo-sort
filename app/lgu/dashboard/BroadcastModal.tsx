@@ -3,8 +3,8 @@
 
 import React, { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Megaphone, Send, CheckCircle } from "lucide-react";
-import { EM, BROADCAST_TYPES, BROADCAST_TEMPLATES, INP } from "./_constants";
+import { Megaphone, Send, CheckCircle, Pin } from "lucide-react";
+import { THEME, BROADCAST_TYPES, BROADCAST_TEMPLATES, INP } from "./_constants";
 import { Modal, MHead, MFooter, BtnCancel, BtnPrimary } from "./_shared";
 import type { LGUProfile } from "./_types";
 
@@ -28,7 +28,6 @@ export default function BroadcastModal({profile,citizenCount,onClose,onSent}:{pr
     }).select("id").single();
     if (error || !bc) { setSaving(false); return; }
 
-    // Get all citizens in this barangay and create notifications
     const { data: cDetails } = await supabase.from("citizen_details").select("id").eq("barangay", profile.barangay).eq("municipality", profile.municipality);
     if (cDetails && cDetails.length > 0) {
       const notifs = cDetails.map((c:any) => ({
@@ -45,66 +44,96 @@ export default function BroadcastModal({profile,citizenCount,onClose,onSent}:{pr
 
   return (
     <Modal onClose={onClose} wide>
-      <MHead title="Broadcast to Citizens" sub={`${profile.barangay} · ${citizenCount} recipients`} icon={Megaphone} onClose={onClose}/>
-      {/* Scrollable body — min-height:0 lets flex parent shrink it */}
-      <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:12,overflowY:"auto",minHeight:0}}>
-        {/* Type pills */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {BROADCAST_TYPES.map(t=>(
-            <button key={t.id} onClick={()=>setType(t.id)}
-              style={{padding:"6px 12px",borderRadius:20,border:`1.5px solid ${type===t.id?EM[400]:EM[100]}`,
-                background:type===t.id?EM[100]:"#fff",cursor:"pointer",fontSize:11,fontWeight:type===t.id?700:500,
-                color:type===t.id?EM[800]:"#374151",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-              <span>{t.icon}</span>{t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Quick templates — single column, description wraps instead of overflowing */}
+      <MHead title="Broadcast Hub" sub={`${profile.barangay} · ${citizenCount} Active Recipients`} icon={Megaphone} onClose={onClose}/>
+      
+      <div className="no-scrollbar" style={{padding:"24px",display:"flex",flexDirection:"column",gap:20,overflowY:"auto",minHeight:0}}>
+        
+        {/* Type selection */}
         <div>
-          <div style={{fontSize:10,fontWeight:800,color:EM[700],letterSpacing:".08em",textTransform:"uppercase",marginBottom:7}}>Quick Templates</div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {BROADCAST_TEMPLATES.map(s=>(
-              <button key={s.id}
-                onClick={()=>{setPicked(s.id);setType(s.type);setSubject(s.title);setBody(s.body);}}
-                style={{padding:"10px 12px",borderRadius:10,textAlign:"left",cursor:"pointer",width:"100%",
-                  border:`1.5px solid ${picked===s.id?EM[400]:EM[100]}`,
-                  background:picked===s.id?EM[50]:"#fff",
-                  display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:18,flexShrink:0}}>{s.icon}</span>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:700,color:EM[900]}}>{s.title}</div>
-                  <div style={{fontSize:11,color:"#6b7280",marginTop:1,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{s.body}</div>
-                </div>
-                {picked===s.id && <span style={{fontSize:13,color:EM[600],flexShrink:0,marginLeft:"auto"}}>✓</span>}
+          <label style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",display:"block",marginBottom:10}}>Transmission Type</label>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {BROADCAST_TYPES.map(t=>(
+              <button key={t.id} onClick={()=>setType(t.id)}
+                style={{
+                  padding:"8px 16px",borderRadius:12,
+                  border:`1px solid ${type===t.id?THEME.primary:THEME.border}`,
+                  background:type===t.id?THEME.accent:"#fff",
+                  cursor:"pointer",fontSize:11,fontWeight:900,
+                  color:type===t.id?THEME.primary:THEME.text,
+                  display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",
+                  textTransform: "uppercase", letterSpacing: "0.02em",
+                  transition: "all 0.2s"
+                }}>
+                <span style={{fontSize:14}}>{t.icon}</span>{t.label}
               </button>
             ))}
           </div>
         </div>
 
+        {/* Templates */}
         <div>
-          <label style={{fontSize:10,fontWeight:800,color:EM[700],letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:4}}>Subject *</label>
-          <input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="e.g. Segregation Reminder" style={INP}/>
+          <div style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",marginBottom:10}}>System Templates</div>
+          <div style={{display:"grid",gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",gap:10}}>
+            {BROADCAST_TEMPLATES.map(s=>(
+              <button key={s.id}
+                onClick={()=>{setPicked(s.id);setType(s.type);setSubject(s.title);setBody(s.body);}}
+                style={{
+                  padding:"14px",borderRadius:16,textAlign:"left",cursor:"pointer",
+                  border:`1px solid ${picked===s.id?THEME.primary:THEME.border}`,
+                  background:picked===s.id?THEME.accent:"#fff",
+                  display:"flex",alignItems:"flex-start",gap:12,
+                  transition: "all 0.2s",
+                  boxShadow: picked === s.id ? `0 4px 12px ${THEME.primary}10` : "none"
+                }}>
+                <span style={{fontSize:20,flexShrink:0}}>{s.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:900,color:THEME.text, textTransform: "uppercase"}}>{s.title}</div>
+                  <div style={{fontSize:10,color:THEME.textMuted,marginTop:4,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical", fontWeight: 500}}>{s.body}</div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
-        <div>
-          <label style={{fontSize:10,fontWeight:800,color:EM[700],letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:4}}>Message *</label>
-          <textarea value={body} onChange={e=>setBody(e.target.value)} placeholder="Type your message to all citizens…" rows={3} style={{...INP,resize:"none",lineHeight:1.6}}/>
+
+        {/* Form */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+          <div>
+            <label style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",display:"block",marginBottom:6}}>Broadcast Subject</label>
+            <input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="e.g. Protocol Update: Segregation" style={INP}/>
+          </div>
+          <div>
+            <label style={{fontSize:10,fontWeight:900,color:THEME.textMuted,letterSpacing:".1em",textTransform:"uppercase",display:"block",marginBottom:6}}>Signal Body</label>
+            <textarea value={body} onChange={e=>setBody(e.target.value)} placeholder="Compose your transmission to all resident nodes…" rows={4} style={{...INP,resize:"none",lineHeight:1.6}}/>
+          </div>
         </div>
-        <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",fontSize:13,color:EM[800]}}>
-          <input type="checkbox" checked={pinned} onChange={e=>setPinned(e.target.checked)} style={{width:16,height:16,accentColor:EM[600]}}/>
-          <span>Pin to top of citizen news feed</span>
+
+        <label style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontSize:12,color:THEME.text, fontWeight: 700, textTransform: "uppercase", userSelect: "none"}}>
+          <input type="checkbox" checked={pinned} onChange={e=>setPinned(e.target.checked)} style={{width:18,height:18,accentColor:THEME.primary, cursor: "pointer"}}/>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Pin size={14} className={pinned ? "text-[#1c4532]" : "text-slate-400"} />
+            <span>Pin to citizen dashboard</span>
+          </div>
         </label>
-        {success
-          ? <div style={{padding:"10px 12px",borderRadius:9,background:EM[50],border:`1px solid ${EM[300]}`,display:"flex",gap:8,alignItems:"center"}}><CheckCircle size={14} color={EM[600]}/><span style={{fontSize:12,color:EM[800],fontWeight:600}}>Broadcast sent to {citizenCount} citizens!</span></div>
-          : <div style={{padding:"9px 12px",borderRadius:9,background:EM[50],border:`1px solid ${EM[200]}`,fontSize:12,color:EM[700],lineHeight:1.5}}>✅ Citizens receive an in-app notification. Push delivery requires FCM setup.</div>
-        }
+
+        {success ? (
+          <div style={{padding:"16px",borderRadius:12,background:THEME.accent,border:`1px solid ${THEME.primary}20`,display:"flex",gap:10,alignItems:"center", animation: "fadeInUp 0.4s ease both"}}>
+            <CheckCircle size={18} className="text-[#1c4532]" />
+            <span style={{fontSize:12,color:THEME.primary,fontWeight:900, textTransform: "uppercase"}}>Signal transmitted to {citizenCount} nodes!</span>
+          </div>
+        ) : (
+          <div style={{padding:"12px 16px",borderRadius:12,background:"#f8fafc",border:`1px solid ${THEME.border}`,fontSize:11,color:THEME.textMuted,lineHeight:1.5, fontWeight: 600, display: "flex", gap: 8, alignItems: "center"}}>
+            <span style={{ fontSize: 16 }}>📡</span>
+            <span>Broadcasting will trigger real-time app notifications for all active residents in Barangay {profile.barangay}.</span>
+          </div>
+        )}
       </div>
+
       <MFooter>
         <BtnCancel onClick={onClose}/>
-        <BtnPrimary onClick={send} disabled={!subject||!body||saving||success}><Send size={14}/> {saving?"Sending…":"Send Broadcast"}</BtnPrimary>
+        <BtnPrimary onClick={send} disabled={!subject||!body||saving||success}>
+          <Send size={14}/> {saving?"Transmitting…":"Send Broadcast"}
+        </BtnPrimary>
       </MFooter>
     </Modal>
   );
 }
-
-// ── REPORT REVIEW MODAL ───────────────────────────────────────────────────────
