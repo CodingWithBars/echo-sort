@@ -44,18 +44,18 @@ function StatCard({label,value,sub,delay=0,isPrimary=false}:{label:string;value:
   const arrowBorder = isPrimary ? 'none' : '1px solid #e5e7eb';
 
   return(
-    <div style={{background:bg,borderRadius:24,padding:"24px",display:"flex",flexDirection:"column",gap:16,animation:`fadeUp .5s ease ${delay}s both`,position:"relative",boxShadow:isPrimary?"0 10px 25px rgba(28,69,50,0.2)":"0 4px 15px rgba(0,0,0,0.03)",border:isPrimary?"none":"1px solid #f3f4f6"}}>
+    <div className="p-4 md:p-6" style={{background:bg,borderRadius:20,display:"flex",flexDirection:"column",gap:10,animation:`fadeUp .5s ease ${delay}s both`,position:"relative",boxShadow:isPrimary?"0 10px 25px rgba(28,69,50,0.2)":"0 4px 15px rgba(0,0,0,0.03)",border:isPrimary?"none":"1px solid #f3f4f6"}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
-        <div style={{fontSize:15,fontWeight:600,color:textColor,fontFamily:"sans-serif"}}>{label}</div>
-        <div style={{width:32,height:32,borderRadius:"50%",background:arrowBg,border:arrowBorder,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:isPrimary?"":"0 2px 5px rgba(0,0,0,0.05)"}}>
-          <ArrowUpRight size={16} style={{color:arrowColor}}/>
+        <div style={{fontSize:11,fontWeight:800,color:textColor,fontFamily:"sans-serif",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</div>
+        <div style={{width:24,height:24,borderRadius:"50%",background:arrowBg,border:arrowBorder,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:isPrimary?"":"0 2px 5px rgba(0,0,0,0.05)"}}>
+          <ArrowUpRight size={12} style={{color:arrowColor}}/>
         </div>
       </div>
       <div>
-        <div style={{fontSize:38,fontWeight:700,color:textColor,lineHeight:1.1,fontFamily:"sans-serif",letterSpacing:"-0.02em"}}>{value}</div>
-        {sub&&<div style={{fontSize:12,color:subColor,marginTop:10,display:"flex",alignItems:"center",gap:6}}>
-          <div style={{padding:"2px 6px",borderRadius:6,background:isPrimary?"rgba(255,255,255,0.1)":"#e6f0eb",color:isPrimary?"#fff":"#1c4532",fontSize:10,fontWeight:700}}>↑</div>
-          {sub}
+        <div className="text-2xl md:text-4xl font-black" style={{color:textColor,lineHeight:1.1,fontFamily:"sans-serif",letterSpacing:"-0.04em"}}>{value}</div>
+        {sub&&<div style={{fontSize:10,color:subColor,marginTop:6,display:"flex",alignItems:"center",gap:6}}>
+          <div style={{padding:"1px 4px",borderRadius:4,background:isPrimary?"rgba(255,255,255,0.1)":"#e6f0eb",color:isPrimary?"#fff":"#1c4532",fontSize:8,fontWeight:900}}>↑</div>
+          <span className="uppercase tracking-widest font-black" style={{fontSize:9, opacity: 0.8}}>{sub}</span>
         </div>}
       </div>
     </div>
@@ -391,7 +391,24 @@ export default function Page() {
       <style>{SLIDE_IN_STYLE}</style>
       <style>{`.row-hover:hover{background:#f9fafb!important;}input::placeholder,textarea::placeholder{color:#9ca3af;}select option{background:#fff;color:#111827;}::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px;}
       .stat-cards-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 32px; }
-      @media (max-width: 1024px) { .stat-cards-container { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; width: 100%; scroll-behavior: smooth; } .stat-cards-container::-webkit-scrollbar { height: 4px; } .stat-cards-container::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; } .stat-cards-container > div { flex: 0 0 280px; scroll-snap-align: start; } }`}</style>
+      @media (max-width: 1024px) { 
+        .stat-cards-container { display: flex; flex-wrap: nowrap; overflow-x: auto; padding: 0 0 12px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; width: 100%; scroll-behavior: smooth; margin-bottom: 16px; gap: 10px; } 
+        .stat-cards-container::-webkit-scrollbar { display: none; } 
+        .stat-cards-container > div { flex: 0 0 240px; scroll-snap-align: start; } 
+      }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      @media (max-width: 640px) {
+        .notif-dropdown {
+          position: fixed !important;
+          top: 72px !important;
+          left: 12px !important;
+          right: 12px !important;
+          width: auto !important;
+          max-width: none !important;
+          z-index: 5000 !important;
+        }
+      }`}</style>
 
       {isSidebarOpen&&<div className="fixed inset-0 z-[2000] lg:hidden" style={{background:"rgba(0,0,0,.3)",backdropFilter:"blur(2px)"}} onClick={()=>setIsSidebarOpen(false)}/>}
 
@@ -460,7 +477,7 @@ export default function Page() {
       {/* ── MAIN ── */}
       <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
         {/* Header */}
-        <header style={{height:80,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 32px",flexShrink:0,zIndex:100,position:"relative"}}>
+        <header className="h-16 md:h-20 px-4 md:px-8" style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,zIndex:100,position:"relative"}}>
           
           {/* Mobile menu button */}
           <div className="lg:hidden" style={{marginRight:16}}>
@@ -485,7 +502,7 @@ export default function Page() {
                 <Bell size={16} color="#4b5563"/>
                 {unreadC>0&&<span style={{position:"absolute",top:-2,right:-2,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff"}}>{unreadC>9?"9+":unreadC}</span>}
               </button>
-              {notifOpen&&(<div style={{position:"absolute",top:"calc(100% + 12px)",right:0,width:340,background:"#ffffff",borderRadius:16,border:"1px solid #e5e7eb",boxShadow:"0 20px 40px rgba(0,0,0,.08)",zIndex:300,animation:"dropIn .2s ease both",overflow:"hidden"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px",borderBottom:"1px solid #f3f4f6",background:"#f9fafb"}}><span style={{fontSize:14,fontWeight:700,color:"#111827"}}>Notifications{unreadC>0&&<span style={{fontSize:11,marginLeft:6,background:"#ef4444",color:"#fff",padding:"2px 8px",borderRadius:20,fontWeight:600}}>{unreadC} new</span>}</span><button onClick={()=>setNotifOpen(false)} style={{background:"none",border:"none",cursor:"pointer",display:"flex"}}><X size={16} color="#6b7280"/></button></div><div style={{maxHeight:320,overflowY:"auto"}}>{notifs.length===0?<div style={{padding:32,textAlign:"center",color:"#6b7280",fontSize:13}}>No notifications</div>:notifs.map(n=>(<div key={n.id} onClick={()=>markRead(n.id)} style={{padding:"14px 16px",borderBottom:"1px solid #f3f4f6",background:n.is_read?"#fff":"#f8fafc",cursor:"pointer",display:"flex",gap:12,alignItems:"flex-start"}}><div style={{width:32,height:32,borderRadius:"50%",background:"#e0e7ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Info size={14} color="#4f46e5"/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:n.is_read?500:700,color:"#111827"}}>{n.title}</div><div style={{fontSize:12,color:"#4b5563",marginTop:4,lineHeight:1.4}}>{n.body}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:6}}>{timeAgo(n.created_at)}</div></div>{!n.is_read&&<div style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",flexShrink:0,marginTop:6}}/>}</div>))}</div></div>)}
+              {notifOpen&&(<div className="notif-dropdown" style={{position:"absolute",top:"calc(100% + 12px)",right:0,width:340,background:"#ffffff",borderRadius:16,border:"1px solid #e5e7eb",boxShadow:"0 20px 40px rgba(0,0,0,.08)",zIndex:300,animation:"dropIn .2s ease both",overflow:"hidden"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px",borderBottom:"1px solid #f3f4f6",background:"#f9fafb"}}><span style={{fontSize:14,fontWeight:700,color:"#111827"}}>Notifications{unreadC>0&&<span style={{fontSize:11,marginLeft:6,background:"#ef4444",color:"#fff",padding:"2px 8px",borderRadius:20,fontWeight:600}}>{unreadC} new</span>}</span><button onClick={()=>setNotifOpen(false)} style={{background:"none",border:"none",cursor:"pointer",display:"flex"}}><X size={16} color="#6b7280"/></button></div><div style={{maxHeight:320,overflowY:"auto"}}>{notifs.length===0?<div style={{padding:32,textAlign:"center",color:"#6b7280",fontSize:13}}>No notifications</div>:notifs.map(n=>(<div key={n.id} onClick={()=>markRead(n.id)} style={{padding:"14px 16px",borderBottom:"1px solid #f3f4f6",background:n.is_read?"#fff":"#f8fafc",cursor:"pointer",display:"flex",gap:12,alignItems:"flex-start"}}><div style={{width:32,height:32,borderRadius:"50%",background:"#e0e7ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Info size={14} color="#4f46e5"/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:n.is_read?500:700,color:"#111827"}}>{n.title}</div><div style={{fontSize:12,color:"#4b5563",marginTop:4,lineHeight:1.4}}>{n.body}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:6}}>{timeAgo(n.created_at)}</div></div>{!n.is_read&&<div style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",flexShrink:0,marginTop:6}}/>}</div>))}</div></div>)}
             </div>
 
             {/* Profile trigger */}
@@ -497,16 +514,18 @@ export default function Page() {
         </header>
 
         {/* Scrollable content */}
-        <div style={{flex:1,overflowY:"auto"}}>
-          <div style={{maxWidth:1400,margin:"0 auto",padding:"16px 32px 40px"}}>
+        <div className="flex-1 overflow-y-auto no-scrollbar">
+          <div className="max-w-[1400px] mx-auto p-3 md:p-8">
             
-            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:32,flexWrap:"wrap",gap:16}}>
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-5 md:mb-10 gap-3">
               <div>
-                <h1 style={{fontSize:32,fontWeight:700,color:"#111827",margin:"0 0 4px",letterSpacing:"-0.02em"}}>{currentLabel}</h1>
-                <p style={{fontSize:14,color:"#6b7280",margin:0}}>Monitor and manage all system operations from one place.</p>
+                <h1 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight mb-1 uppercase italic">{currentLabel}</h1>
+                <p className="text-[10px] md:text-sm text-slate-500 font-bold uppercase tracking-widest opacity-70">Monitor system operations from the command center.</p>
               </div>
-              <div style={{display:"flex",gap:12}}>
-                <button onClick={fetchData} style={{padding:"10px 20px",borderRadius:24,background:"#1c4532",color:"#fff",border:"none",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><RefreshCw size={14}/> Refresh Data</button>
+              <div className="flex gap-2">
+                <button onClick={fetchData} className="flex-1 md:flex-none justify-center px-4 py-2.5 rounded-xl bg-[#1c4532] text-white text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 shadow-lg shadow-emerald-900/10 hover:opacity-90 active:scale-95 transition-all">
+                  <RefreshCw size={12}/> Refresh
+                </button>
               </div>
             </div>
 
@@ -529,19 +548,19 @@ export default function Page() {
               
               {activeTab==="audit"&&(<div style={{padding:"24px"}}><div style={{marginBottom:24,maxWidth:300,position:"relative"}}><Search size={14} style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#6b7280"}}/><input placeholder="Search logs…" value={search} onChange={e=>setSearch(e.target.value)} style={{width:"100%",paddingLeft:38,paddingRight:14,paddingTop:10,paddingBottom:10,border:"1px solid #d1d5db",borderRadius:12,fontSize:13,color:"#111827",outline:"none",background:"#f9fafb",boxSizing:"border-box"}}/></div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}><thead><tr style={{borderBottom:"2px solid #e5e7eb"}}>{["Action","Performed By","Target ID","Reason","Time"].map(h=><th key={h} style={{padding:"14px 16px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>)}</tr></thead><tbody>{auditLogs.length===0?<tr><td colSpan={5} style={{textAlign:"center",padding:60,color:"#6b7280",fontSize:14}}>No audit logs yet</td></tr>:auditLogs.filter(l=>search===""||l.action_type.toLowerCase().includes(search.toLowerCase())||(l.admin_name??"").toLowerCase().includes(search.toLowerCase())||(l.reason??"").toLowerCase().includes(search.toLowerCase())).map(log=>(<tr key={log.id} className="row-hover" style={{borderBottom:"1px solid #f3f4f6"}}><td style={{padding:"14px 16px"}}><span style={{fontFamily:"monospace",fontSize:12,fontWeight:600,padding:"4px 10px",borderRadius:8,background:"#f3f4f6",color:"#4b5563"}}>{log.action_type}</span></td><td style={{padding:"14px 16px",fontSize:13,color:"#111827",fontWeight:600}}>{log.admin_name}</td><td style={{padding:"14px 16px",fontSize:12,fontFamily:"monospace",color:"#6b7280",maxWidth:140}}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{log.target_id??"—"}</div></td><td style={{padding:"14px 16px",fontSize:13,color:"#4b5563",maxWidth:280}}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{log.reason??"—"}</div></td><td style={{padding:"14px 16px",fontSize:12,color:"#6b7280",whiteSpace:"nowrap"}}>{timeAgo(log.created_at)}</td></tr>))}</tbody></table></div></div>)}
               
-              {activeTab==="system"&&stats&&(<div style={{padding:"32px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:24}}>
-                <div style={{background:"#f9fafb",borderRadius:20,padding:24,border:"1px solid #e5e7eb"}}>
-                  <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:24,display:"flex",alignItems:"center",gap:8}}><Layers size={18} color="#1c4532"/>User Breakdown</div>
-                  {([{role:"SUPER_ADMIN",cnt:users.filter(u=>u.role==="SUPER_ADMIN").length},{role:"ADMIN",cnt:stats.totalAdmins},{role:"DRIVER",cnt:stats.totalDrivers},{role:"LGU",cnt:stats.totalLGU},{role:"CITIZEN",cnt:stats.totalCitizens}] as {role:UserRole;cnt:number}[]).map(({role,cnt})=>{const cfg=ROLE_CONFIG[role],pct=stats.totalUsers>0?(cnt/stats.totalUsers)*100:0;return<div key={role} style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8,alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:cfg.color}}/><span style={{fontSize:13,fontWeight:500,color:"#4b5563"}}>{cfg.label}</span></div><span style={{fontSize:14,fontWeight:700,color:"#111827"}}>{cnt}</span></div><div style={{height:6,borderRadius:3,background:"#e5e7eb"}}><div style={{height:"100%",width:`${pct}%`,borderRadius:3,background:cfg.color,transition:"width .6s"}}/></div></div>;})}
+              {activeTab==="system"&&stats&&(<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8" style={{padding:0}}>
+                <div className="p-5 md:p-8" style={{background:"#f9fafb",borderRadius:24,border:"1px solid #e5e7eb"}}>
+                  <div style={{fontSize:11,fontWeight:900,color:"#111827",marginBottom:20,display:"flex",alignItems:"center",gap:8,textTransform:"uppercase",letterSpacing:".1em"}}><Layers size={16} color="#1c4532"/> User Breakdown</div>
+                  {([{role:"SUPER_ADMIN",cnt:users.filter(u=>u.role==="SUPER_ADMIN").length},{role:"ADMIN",cnt:stats.totalAdmins},{role:"DRIVER",cnt:stats.totalDrivers},{role:"LGU",cnt:stats.totalLGU},{role:"CITIZEN",cnt:stats.totalCitizens}] as {role:UserRole;cnt:number}[]).map(({role,cnt})=>{const cfg=ROLE_CONFIG[role],pct=stats.totalUsers>0?(cnt/stats.totalUsers)*100:0;return<div key={role} style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:"50%",background:cfg.color}}/><span style={{fontSize:12,fontWeight:600,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.02em"}}>{cfg.label}</span></div><span style={{fontSize:13,fontWeight:900,color:"#111827"}}>{cnt}</span></div><div style={{height:4,borderRadius:2,background:"#e5e7eb"}}><div style={{height:"100%",width:`${pct}%`,borderRadius:2,background:cfg.color,transition:"width .6s"}}/></div></div>;})}
                 </div>
-                <div style={{background:"#f9fafb",borderRadius:20,padding:24,border:"1px solid #e5e7eb"}}>
-                  <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:24,display:"flex",alignItems:"center",gap:8}}><Trash2 size={18} color="#1c4532"/>Bin Network Health</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>{[{label:"Total Bins",value:stats.totalBins,color:"#1c4532",bg:"#e6f0eb"},{label:"Critical",value:stats.criticalBins,color:"#dc2626",bg:"#fee2e2"},{label:"High Fill",value:stats.highBins,color:"#d97706",bg:"#fef3c7"},{label:"Collections",value:stats.totalCollections,color:"#2563eb",bg:"#dbeafe"}].map(s=>(<div key={s.label} style={{background:s.bg,borderRadius:16,padding:"20px",border:`1px solid ${s.color}20`}}><div style={{fontSize:28,fontWeight:800,color:s.color,lineHeight:1}}>{s.value}</div><div style={{fontSize:13,fontWeight:600,color:s.color,marginTop:8}}>{s.label}</div></div>))}</div>
+                <div className="p-5 md:p-8" style={{background:"#f9fafb",borderRadius:24,border:"1px solid #e5e7eb"}}>
+                  <div style={{fontSize:11,fontWeight:900,color:"#111827",marginBottom:20,display:"flex",alignItems:"center",gap:8,textTransform:"uppercase",letterSpacing:".1em"}}><Trash2 size={16} color="#1c4532"/> Bin Network Health</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>{[{label:"Total Bins",value:stats.totalBins,color:"#1c4532",bg:"#e6f0eb"},{label:"Critical",value:stats.criticalBins,color:"#dc2626",bg:"#fee2e2"},{label:"High Fill",value:stats.highBins,color:"#d97706",bg:"#fef3c7"},{label:"Collections",value:stats.totalCollections,color:"#2563eb",bg:"#dbeafe"}].map(s=>(<div key={s.label} className="p-4 md:p-6" style={{background:s.bg,borderRadius:16,border:`1px solid ${s.color}20`}}><div className="text-xl md:text-3xl font-black" style={{color:s.color,lineHeight:1}}>{s.value}</div><div style={{fontSize:11,fontWeight:800,color:s.color,marginTop:6,textTransform:"uppercase",letterSpacing:"0.02em"}}>{s.label}</div></div>))}</div>
                 </div>
-                <div style={{background:"#f9fafb",borderRadius:20,padding:24,border:"1px solid #e5e7eb",display:"flex",flexDirection:"column"}}>
-                  <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:24,display:"flex",alignItems:"center",gap:8}}><AlertTriangle size={18} color="#1c4532"/>Violations & Reports</div>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",gap:16}}>
-                    {[{label:"Pending Violations",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Pending").length??0),0),color:"#d97706"},{label:"Under Review",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Under Review").length??0),0),color:"#2563eb"},{label:"Resolved",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Resolved").length??0),0),color:"#059669"},{label:"Citizen Reports",val:stats.totalReports,color:"#7c3aed"}].map(s=>(<div key={s.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid #e5e7eb"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:10,height:10,borderRadius:"50%",background:s.color}}/><span style={{fontSize:14,fontWeight:500,color:"#4b5563"}}>{s.label}</span></div><span style={{fontSize:18,fontWeight:700,color:s.color}}>{s.val}</span></div>))}
+                <div className="p-5 md:p-8" style={{background:"#f9fafb",borderRadius:24,border:"1px solid #e5e7eb",display:"flex",flexDirection:"column"}}>
+                  <div style={{fontSize:11,fontWeight:900,color:"#111827",marginBottom:20,display:"flex",alignItems:"center",gap:8,textTransform:"uppercase",letterSpacing:".1em"}}><AlertTriangle size={16} color="#1c4532"/> Violations & Reports</div>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",gap:10}}>
+                    {[{label:"Pending Violations",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Pending").length??0),0),color:"#d97706"},{label:"Under Review",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Under Review").length??0),0),color:"#2563eb"},{label:"Resolved",val:citizens.reduce((a,c)=>a+(c.violations?.filter(v=>v.status==="Resolved").length??0),0),color:"#059669"},{label:"Citizen Reports",val:stats.totalReports,color:"#7c3aed"}].map(s=>(<div key={s.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e5e7eb"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:8,height:8,borderRadius:"50%",background:s.color}}/><span style={{fontSize:12,fontWeight:600,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.02em"}}>{s.label}</span></div><span style={{fontSize:16,fontWeight:900,color:s.color}}>{s.val}</span></div>))}
                   </div>
                 </div>
               </div>)}
