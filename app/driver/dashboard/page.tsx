@@ -14,6 +14,7 @@ import CollectionHistory, {
   type TravelOrder,
   type TripSummary,
 } from "@/components/driver/CollectionHistory";
+import { type DriverMapProps } from "@/components/driver/DriverMap";
 import TruckStatus      from "@/components/driver/TruckStatus";
 import { RealtimePostgresUpdatePayload } from "@supabase/supabase-js";
 
@@ -22,6 +23,7 @@ interface DriverDetails {
   vehicle_plate_number?:string;assigned_route?:string;employment_status?:string;
 }
 
+// Dynamically import the map to avoid SSR issues with MapLibre/Mapbox
 const DriverMap = dynamic(()=>import("@/components/driver/DriverMap"),{
   ssr:false,
   loading:()=>(
@@ -358,6 +360,12 @@ export default function DriverDashboard() {
   const [tripSummary,   setTripSummary]   = useState<any>(null);
   const [isRouting,     setIsRouting]     = useState(false);
 
+  // ── Bypass & Recording State ──
+  const [isBypassMode,  setIsBypassMode]  = useState(false);
+  const [isRecording,   setIsRecording]   = useState(false);
+  const [recordedPath,  setRecordedPath]  = useState<[number, number][]>([]);
+  const [lastBinId,     setLastBinId]     = useState<string | null>(null);
+
   // Bins formatted for RoutingLayerGL (needs fillLevel not fill_level)
   const routeBins = activeBins.map(b => ({
     id:          b.id,
@@ -426,10 +434,18 @@ export default function DriverDashboard() {
   const routeStateProps: ActiveRouteState & ActiveRouteSetters = {
     activeOrder, activeBins, tripSummary, isRouting,
     setActiveOrder, setActiveBins, setTripSummary, setIsRouting,
+    // Bypass additions
+    isBypassMode, setIsBypassMode,
+    isRecording, setIsRecording,
+    recordedPath, setRecordedPath,
+    lastBinId, setLastBinId
   };
 
   const handleRouteStarted = (_bins: BinManifest[], _order: TravelOrder) => {
     setActiveTab("map");
+    // Start at a virtual "depot" or current position for bypass tracking
+    setLastBinId(null);
+    setRecordedPath([]);
   };
 
   const renderContent=()=>{
@@ -438,7 +454,16 @@ export default function DriverDashboard() {
       case "map":
         return (
           <div className="absolute inset-0 w-full h-full overflow-hidden">
-            <DriverMap activeBins={routeBins} hasActiveRoute={!!activeOrder}/>
+            <DriverMap 
+              activeBins={routeBins} 
+              hasActiveRoute={!!activeOrder}
+              isBypassMode={isBypassMode}
+              setIsBypassMode={setIsBypassMode}
+              isRecording={isRecording}
+              setIsRecording={setIsRecording}
+              recordedPath={recordedPath}
+              setRecordedPath={setRecordedPath}
+            />
             {activeOrder && (
               <div style={{
                 position:"absolute",bottom:16,left:"50%",transform:"translateX(-50%)",

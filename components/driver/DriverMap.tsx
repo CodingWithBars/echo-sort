@@ -46,13 +46,29 @@ export interface RoutingBin {
   collected?: boolean;
 }
 
-interface DriverMapProps {
+export interface DriverMapProps {
   /** Bins from active travel order — overrides DB bins for routing */
   activeBins?:     RoutingBin[];
   hasActiveRoute?: boolean;
+  // Bypass additions
+  isBypassMode?:    boolean;
+  setIsBypassMode?: React.Dispatch<React.SetStateAction<boolean>>;
+  isRecording?:     boolean;
+  setIsRecording?:  React.Dispatch<React.SetStateAction<boolean>>;
+  recordedPath?:    [number, number][];
+  setRecordedPath?: React.Dispatch<React.SetStateAction<[number, number][]>>;
 }
 
-export default function DriverMap({ activeBins = [], hasActiveRoute = false }: DriverMapProps) {
+export default function DriverMap({ 
+  activeBins = [], 
+  hasActiveRoute = false,
+  isBypassMode = false,
+  setIsBypassMode,
+  isRecording = false,
+  setIsRecording,
+  recordedPath = [],
+  setRecordedPath,
+}: DriverMapProps) {
   const [dbBins,        setDbBins]        = useState<RoutingBin[]>([]);
   const [history,       setHistory]       = useState<CollectionLog[]>([]);
   const [driverPos,     setDriverPos]     = useState<[number, number] | null>(null);
@@ -130,11 +146,26 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
       setIsDashboardVisible(false); // Auto-hide dashboard when starting driving
       const id = navigator.geolocation.watchPosition(
         pos => {
-          setDriverPos([pos.coords.latitude, pos.coords.longitude]);
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setDriverPos([lat, lng]);
           if (pos.coords.heading !== null) setHeading(pos.coords.heading);
+
+          // ── RECORD BREADCRUMBS ──
+          if (isRecording && setRecordedPath) {
+            setRecordedPath(prev => {
+              // Only add if moved > 5 meters to keep waypoints clean
+              if (prev.length > 0) {
+                const last = prev[prev.length - 1];
+                const dist = Math.hypot(lat - last[0], lng - last[1]) * 111319.9; // approx meters
+                if (dist < 5) return prev;
+              }
+              return [...prev, [lat, lng]];
+            });
+          }
         },
         err => console.error("Geolocation error:", err),
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
       );
       setGeoWatchId(id);
     }
@@ -159,8 +190,15 @@ export default function DriverMap({ activeBins = [], hasActiveRoute = false }: D
         mapStyle={MAP_STYLE}
         onRouteUpdate={setEta}
         isTracking={isTracking}
+        hasActiveRoute={hasActiveRoute}
         onToggleTracking={toggleTracking}
         onOpenDashboard={() => setIsDashboardVisible(true)}
+        // Bypass props
+        isBypassMode={isBypassMode}
+        setIsBypassMode={setIsBypassMode}
+        isRecording={isRecording}
+        setIsRecording={setIsRecording}
+        recordedPath={recordedPath}
       />
       <DriverSidebar
         bins={dbBins}

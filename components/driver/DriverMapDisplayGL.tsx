@@ -19,6 +19,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import RoutingLayerGL from "./RoutingLayerGL";
 import type { StyleSpecification } from "maplibre-gl";
 import { LUPON_CENTER } from "../map/MapAssets";
+import { createClient } from "@/utils/supabase/client";
+
+const supabase = createClient();
 
 interface DriverMapDisplayGLProps {
   bins:             any[];
@@ -34,8 +37,15 @@ interface DriverMapDisplayGLProps {
   mapStyle:         StyleSpecification | string;
   onRouteUpdate:    (stats: { dist: string; time: string }) => void;
   isTracking:       boolean;
+  hasActiveRoute?:  boolean;
   onToggleTracking?: () => void;
   onOpenDashboard:  () => void;
+  // Bypass additions
+  isBypassMode?:    boolean;
+  setIsBypassMode?: (v: boolean) => void;
+  isRecording?:     boolean;
+  setIsRecording?:  (v: boolean) => void;
+  recordedPath?:    [number, number][];
 }
 
 const FC = (n: number) =>
@@ -190,10 +200,16 @@ function DestMarkerGL({ pos }: { pos: [number, number] }) {
 
 // ── TOP STATUS BAR ────────────────────────────────────────────────────────────
 
-function TopBar({ isTracking }: { isTracking: boolean }) {
+function TopBar({ isTracking, isRecording }: { isTracking: boolean; isRecording: boolean }) {
   return (
     <div style={{ position: "absolute", top: 110, right: 16, zIndex: 900, pointerEvents: "none", display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
        <div style={{ padding: "6px 12px", background: "rgba(255,255,255,0.95)", borderRadius: 20, fontSize: 11, fontWeight: 800, color: isTracking ? "#10b981" : "#64748b", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", fontFamily: "system-ui", border: "1px solid rgba(0,0,0,0.05)" }}>{isTracking ? "GPS ON" : "GPS OFF"}</div>
+       {isRecording && (
+         <div style={{ padding: "6px 12px", background: "#ef4444", borderRadius: 20, fontSize: 11, fontWeight: 800, color: "#fff", boxShadow: "0 2px 10px rgba(239,68,68,0.3)", fontFamily: "system-ui", display: "flex", alignItems: "center", gap: 6 }}>
+           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", animation: "driverPulse 1.5s infinite" }} />
+           REC PATH
+         </div>
+       )}
     </div>
   );
 }
@@ -228,11 +244,38 @@ function NextStopCard({ bin, stopNumber, totalStops, routeStats }: { bin: any; s
 
 // ── MAP CONTROLS COLUMN ───────────────────────────────────────────────────────
 
-function MapControls({ heading, pitch, onResetNorth, onTogglePitch, onCenterDriver, hasDriver, onOpenDashboard, onShowStops, stopCount }: any) {
+function MapControls({ heading, pitch, onResetNorth, onTogglePitch, onCenterDriver, hasDriver, hasActiveRoute, onOpenDashboard, onShowStops, stopCount, isBypassMode, setIsBypassMode, isRecording, setIsRecording }: any) {
   const B = (extra?: any) => ({ width: 54, height: 54, borderRadius: 27, background: "#ffffff", border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", ...extra });
   return (
-    <div style={{ position: "absolute", right: 16, bottom: "calc(max(env(safe-area-inset-bottom, 20px), 20px) + 60px)", zIndex: 900, display: "flex", marginBottom: "10px", flexDirection: "column", gap: 14 }}>
+    <div style={{ position: "absolute", right: 16, bottom: "calc(max(env(safe-area-inset-bottom, 20px), 20px) + 60px)", zIndex: 900, display: "flex", flexDirection: "column", gap: 14 }}>
       
+      {/* Bypass / Manual Toggle */}
+      {setIsBypassMode && (
+        <button 
+          onClick={() => {
+            if (isBypassMode) {
+              setIsRecording?.(false);
+              setIsBypassMode(false);
+            } else {
+              setIsBypassMode(true);
+              setIsRecording?.(true);
+            }
+          }} 
+          title="Manual Bypass Mode" 
+          style={B({ 
+            background: isBypassMode ? "#f59e0b" : "#ffffff", 
+            border: isBypassMode ? "none" : "1px solid rgba(0,0,0,0.05)",
+            color: isBypassMode ? "white" : "#64748b"
+          })} 
+          className="dmgl-btn-press"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 10 4 15 9 20"></polyline>
+            <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
+          </svg>
+        </button>
+      )}
+
       {/* Menu / Dashboard Modal Button */}
       <button onClick={onOpenDashboard} title="Settings" style={B({ background: "#10b981", border: "none", color: "white" })} className="dmgl-btn-press">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -281,7 +324,7 @@ function MapControls({ heading, pitch, onResetNorth, onTogglePitch, onCenterDriv
 function FloatingETABadge({ routeStats, stopCount, onOpenDashboard }: any) {
   if (!routeStats) return null;
   return (
-    <div onClick={onOpenDashboard} style={{ position: "absolute", bottom: "calc(max(env(safe-area-inset-bottom, 20px), 20px) + 60px)", left: 16, zIndex: 900, background: "#ffffff", padding: "8px 24px", marginBottom: "10px", borderRadius: 10, boxShadow: "0 6px 24px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", cursor: "pointer", border: "1px solid rgba(0,0,0,0.05)" }} className="dmgl-btn-press">
+    <div onClick={onOpenDashboard} style={{ position: "absolute", bottom: "calc(max(env(safe-area-inset-bottom, 20px), 20px) + 60px)", left: 16, zIndex: 900, background: "#ffffff", padding: "16px 24px", borderRadius: 28, boxShadow: "0 6px 24px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", cursor: "pointer", border: "1px solid rgba(0,0,0,0.05)" }} className="dmgl-btn-press">
       <span style={{ fontSize: 32, fontWeight: 900, color: "#0f172a", lineHeight: 1.1, fontFamily: "system-ui" }}>{routeStats.time}</span>
       <span style={{ fontSize: 15, fontWeight: 700, color: "#64748b", marginTop: 4, fontFamily: "system-ui" }}>{routeStats.dist} • {stopCount} stops</span>
     </div>
@@ -353,7 +396,19 @@ function PickingToast() {
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 
-export default function DriverMapDisplayGL({ bins, allBins, driverPos, heading, selectedBinId, setSelectedBinId, routeKey, mode, maxDetour, useFence, mapStyle, onRouteUpdate, isTracking, onOpenDashboard }: DriverMapDisplayGLProps) {
+export default function DriverMapDisplayGL({ 
+  bins, allBins, driverPos, heading, selectedBinId, setSelectedBinId, 
+  routeKey, mode, maxDetour, useFence, mapStyle, onRouteUpdate, 
+  isTracking, onOpenDashboard,
+  hasActiveRoute = false,
+  // Bypass additions
+  isBypassMode = false,
+  setIsBypassMode,
+  isRecording = false,
+  setIsRecording,
+  recordedPath = [],
+}: DriverMapDisplayGLProps) {
+  console.log("DriverMapDisplayGL Render:", { hasActiveRoute, setIsBypassMode: !!setIsBypassMode, binCount: bins.length });
   const displayBins = allBins && allBins.length > 0 ? allBins : bins;
   const mapRef = useRef<MapRef>(null);
   const [orderedBins,    setOrderedBins]    = useState<any[]>([]);
@@ -365,6 +420,19 @@ export default function DriverMapDisplayGL({ bins, allBins, driverPos, heading, 
   const [mapLoaded,      setMapLoaded]      = useState(false);
   const [showDrawer,     setShowDrawer]     = useState(false);
   const [routeStats,     setRouteStats]     = useState<{ dist: string; time: string } | null>(null);
+  const [historicalBypass, setHistoricalBypass] = useState<any[]>([]);
+
+  // Fetch historical bypass routes for this area
+  useEffect(() => {
+    if (!isBypassMode) return;
+    (async () => {
+      const { data } = await supabase
+        .from("bypass_routes")
+        .select("*")
+        .limit(20); // Could filter by barangay/municipality if bins had that info easily accessible
+      if (data) setHistoricalBypass(data);
+    })();
+  }, [isBypassMode]);
 
   const handleRouteUpdate = useCallback((stats: { dist: string; time: string }) => {
     setRouteStats(stats);
@@ -434,15 +502,34 @@ export default function DriverMapDisplayGL({ bins, allBins, driverPos, heading, 
                 useFence={useFence} onRouteUpdate={handleRouteUpdate}
                 onOrderUpdate={setOrderedBins} heading={heading}
                 routingPos={routingPos} destinationPos={destinationPos}
+                // Bypass props
+                isBypassMode={isBypassMode}
+                recordedPath={recordedPath}
+                historicalBypass={historicalBypass}
               />
             )}
           </>
         )}
       </Map>
 
-      <TopBar isTracking={isTracking} />
+      <TopBar isTracking={isTracking} isRecording={isRecording ?? false} />
       {nextBin && hasRoute && <NextStopCard bin={nextBin} stopNumber={1} totalStops={orderedBins.length} routeStats={routeStats} />}
-      <MapControls heading={isTracking ? heading : 0} pitch={pitch} onResetNorth={resetNorth} onTogglePitch={togglePitch} onCenterDriver={centerDriver} hasDriver={!!driverPos} onOpenDashboard={onOpenDashboard} onShowStops={() => setShowDrawer(true)} stopCount={orderedBins.length} />
+      <MapControls 
+        heading={isTracking ? heading : 0} 
+        pitch={pitch} 
+        onResetNorth={resetNorth} 
+        onTogglePitch={togglePitch} 
+        onCenterDriver={centerDriver} 
+        hasDriver={!!driverPos} 
+        hasActiveRoute={hasActiveRoute}
+        onOpenDashboard={onOpenDashboard} 
+        onShowStops={() => setShowDrawer(true)} 
+        stopCount={orderedBins.length} 
+        isBypassMode={isBypassMode}
+        setIsBypassMode={setIsBypassMode}
+        isRecording={isRecording}
+        setIsRecording={setIsRecording}
+      />
       <FloatingETABadge routeStats={routeStats} stopCount={orderedBins.length} onOpenDashboard={onOpenDashboard} />
       {pickingDest  && <PickingToast />}
       {showDrawer   && <StopListDrawer orderedBins={orderedBins} mode={mode} selectedBinId={selectedBinId} onSelect={setSelectedBinId} onClose={() => setShowDrawer(false)} />}

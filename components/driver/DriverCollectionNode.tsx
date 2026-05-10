@@ -1,250 +1,220 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+// components/driver/DriverMap.tsx
+// Wrapper that owns GPS tracking + bin data fetching.
+// When `activeBins` is provided by a running travel order (via DriverDashboard),
+// those bins override the live DB bins for routing so RoutingLayerGL targets
+// the specific scheduled collection stops.
+
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/utils/supabase/client";
-import {
-  Wifi,
-  Play,
-  CheckCircle2,
-  Navigation,
-  Database,
-  RefreshCcw,
-  Zap,
-} from "lucide-react";
+import DriverMapDisplay from "./DriverMapDisplayGL";
+import DriverSidebar from "./DriverSidebar";
+import NavigationControls from "../ui/NavigationControls";
+import type { StyleSpecification } from "maplibre-gl";
 
 const supabase = createClient();
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!;
 
-interface DriverCollectionNodeProps {
-  // FIX #3: optional callback so parent (DriverMap) can receive history entries
-  onAddToHistory?: (entry: { id: number; name: string; time: string }) => void;
+const MAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    "mapbox-sat-streets": {
+      type: "raster",
+      tiles: [`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`],
+      tileSize: 512,
+      attribution: '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+  },
+  layers: [
+    { id: "background",        type: "background", paint: { "background-color": "#0f172a" } },
+    { id: "satellite-streets", type: "raster",     source: "mapbox-sat-streets" },
+  ],
+};
+
+interface BinRow { id:number; name:string; lat:number; lng:number; fill_level:number; battery_level:number; }
+interface CollectionLog { id:number; name:string; time:string; }
+
+export interface RoutingBin {
+  id: number | string;
+  name: string;
+  lat: number;
+  lng: number;
+  fillLevel: number;
+  batteryLevel: number;
+  device_id?: string;
+  collected?: boolean;
 }
 
-export default function DriverCollectionNode({
-  onAddToHistory,
-}: DriverCollectionNodeProps) {
-  const [bins, setBins] = useState<any[]>([]);
-  const [driverData, setDriverData] = useState<any>(null);
-  const [isRouting, setIsRouting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+interface DriverMapProps {
+  /** Bins from active travel order — overrides DB bins for routing */
+  activeBins?:     RoutingBin[];
+  hasActiveRoute?: boolean;
+  // Bypass additions
+  isBypassMode?:    boolean;
+  isRecording?:     boolean;
+  recordedPath?:    [number, number][];
+  setRecordedPath?: React.Dispatch<React.SetStateAction<[number, number][]>>;
+}
 
-  // 1. Fetch Driver Profile & Initial Bin Data
-  const initDeployment = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+export default function DriverMap({ 
+  activeBins = [], 
+  hasActiveRoute = false,
+  isBypassMode = false,
+  isRecording = false,
+  recordedPath = [],
+  setRecordedPath,
+}: DriverMapProps) {
+  const [dbBins,        setDbBins]        = useState<RoutingBin[]>([]);
+  const [history,       setHistory]       = useState<CollectionLog[]>([]);
+  const [driverPos,     setDriverPos]     = useState<[number, number] | null>(null);
+  const [heading,       setHeading]       = useState(0);
+  const [routeKey,      setRouteKey]      = useState(0);
+  const [selectedBinId, setSelectedBinId] = useState<number | null>(null);
+  const [isTracking,    setIsTracking]    = useState(false);
+  const [geoWatchId,    setGeoWatchId]    = useState<number | null>(null);
+  const [eta,           setEta]           = useState({ dist: "0 km", time: "0 min" });
+  const [routingMode,   setRoutingMode]   = useState<"fastest" | "priority">("fastest");
+  const [maxDetour,     setMaxDetour]     = useState(300);
+  const [useFence,      setUseFence]      = useState(true);
+  const [isSidebarOpen,      setIsSidebarOpen]      = useState(true);
+  const [isDashboardVisible, setIsDashboardVisible] = useState(true);
 
-    // Fetch Profile joined with Driver Details
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select(`*, driver_details (*)`)
-      .eq("id", user.id)
-      .single();
-
-    if (profile) {
-      setDriverData(profile);
-      setIsRouting(profile.driver_details?.duty_status === "ON-DUTY");
+  const fetchBins = useCallback(async () => {
+    // Scope bins to driver's municipality — get it from their schedule assignments
+    const { data: { user } } = await supabase.auth.getUser();
+    let muni: string | null = null;
+    if (user) {
+      const { data: sched } = await supabase
+        .from("schedule_assignments")
+        .select("collection_schedules!inner(municipality)")
+        .eq("driver_id", user.id)
+        .eq("is_active", true)
+        .limit(1);
+      muni = (sched as any)?.[0]?.collection_schedules?.municipality ?? null;
     }
 
-    const { data: binData } = await supabase.from("bins").select("*");
-    setBins(binData || []);
+    const q = supabase.from("bins").select("id,name,lat,lng,fill_level,battery_level,municipality,barangay");
+    const { data } = muni ? await q.eq("municipality", muni) : await q;
+    if (data) setDbBins((data as BinRow[]).map(b => ({
+      id: b.id, name: b.name, lat: b.lat, lng: b.lng,
+      fillLevel: b.fill_level, batteryLevel: b.battery_level,
+    })));
   }, []);
 
   useEffect(() => {
-    initDeployment();
-  }, [initDeployment]);
+    fetchBins();
+    const ch = supabase.channel("realtime-bins")
+      .on("postgres_changes", { event:"*", schema:"public", table:"bins" }, fetchBins)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [fetchBins]);
 
-  // 2. Toggle Duty Status
-  const toggleDuty = async () => {
-    if (!driverData) return;
-    const nextStatus = isRouting ? "OFF-DUTY" : "ON-DUTY";
+  // Trigger A* only when a NEW travel order starts (prev length was 0, now > 0).
+  // Collecting individual bins (N→N-1) must NOT re-trigger A* — RoutingLayerGL
+  // already re-runs via binsSig when bins change.
+  const prevActiveLenRef = useRef(0);
+  useEffect(() => {
+    const prev = prevActiveLenRef.current;
+    prevActiveLenRef.current = activeBins.length;
+    if (prev === 0 && activeBins.length > 0) {
+      // New route started — force fresh A* calculation
+      setRouteKey(k => k + 1);
+      if (!isTracking) setIsTracking(true);
+    }
+    // Do NOT re-trigger on length decrease (bin collected) or length increase
+    // from same route — binsSig handles incremental updates in RoutingLayerGL.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBins.length]);
 
-    const { error } = await supabase
-      .from("driver_details")
-      .update({ duty_status: nextStatus })
-      // FIX #8: use driver_details.id (the FK row), not the auth profile id
-      .eq("id", driverData.driver_details?.id);
+  // When a travel order is active: route only through uncollected scheduled bins.
+  // Otherwise use all live DB bins (normal freeform mode).
+  const routingBins = hasActiveRoute && activeBins.length > 0
+    ? activeBins.filter(b => !b.collected)
+    : dbBins;
 
-    if (!error) {
-      setIsRouting(!isRouting);
-      setDriverData((prev: any) => ({
-        ...prev,
-        driver_details: {
-          ...prev.driver_details,
-          duty_status: nextStatus,
+  const toggleTracking = () => {
+    if (isTracking) {
+      if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
+      setIsTracking(false); setDriverPos(null); setGeoWatchId(null);
+    } else {
+      setIsTracking(true);
+      setIsDashboardVisible(false); // Auto-hide dashboard when starting driving
+      const id = navigator.geolocation.watchPosition(
+        pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setDriverPos([lat, lng]);
+          if (pos.coords.heading !== null) setHeading(pos.coords.heading);
+
+          // ── RECORD BREADCRUMBS ──
+          if (isRecording && setRecordedPath) {
+            setRecordedPath(prev => {
+              // Only add if moved > 5 meters to keep waypoints clean
+              if (prev.length > 0) {
+                const last = prev[prev.length - 1];
+                const dist = Math.hypot(lat - last[0], lng - last[1]) * 111319.9; // approx meters
+                if (dist < 5) return prev;
+              }
+              return [...prev, [lat, lng]];
+            });
+          }
         },
-      }));
-    } else {
-      console.error("Failed to toggle duty status:", error.message);
-    }
-  };
-
-  // 3. Simulate / Log Collection
-  const simulateCollection = async (bin: any) => {
-    if (!isRouting) {
-      alert("Please START ROUTING to log collections.");
-      return;
-    }
-    setIsSyncing(true);
-
-    // FIX #8: use driver_details.id for the FK, not the top-level profile id.
-    // driverData.driver_details.id is the row in driver_details, which is what
-    // collections.driver_id references as a foreign key.
-    const driverDetailId = driverData?.driver_details?.id;
-    if (!driverDetailId) {
-      console.error("driver_details ID not found — cannot log collection.");
-      setIsSyncing(false);
-      return;
-    }
-
-    const weight = Math.floor(Math.random() * 50) + 10; // Mock 10–60 kg
-    const barangay = bin.name?.split(" - ")[0] || "Zone A";
-
-    const { error } = await supabase.from("collections").insert([
-      {
-        driver_id: driverDetailId, // FIX #8: correct FK
-        bin_id: bin.id,
-        device_id: bin.device_id,
-        weight,
-        type: "General",
-        barangay,
-      },
-    ]);
-
-    if (!error) {
-      // Update local bin fill level to 0 after collection
-      setBins((prev) =>
-        prev.map((b) => (b.id === bin.id ? { ...b, fill_level: 0 } : b))
+        err => console.error("Geolocation error:", err),
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
       );
-
-      // FIX #3: Push to history so the sidebar CollectionHistory panel updates
-      if (onAddToHistory) {
-        onAddToHistory({
-          id: bin.id,
-          name: bin.name,
-          time: new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        });
-      }
-    } else {
-      console.error("Collection insert error:", error.message);
+      setGeoWatchId(id);
     }
-
-    setIsSyncing(false);
   };
+
+  const addToHistory = useCallback((e: CollectionLog) => setHistory(p => [e, ...p]), []);
+  const clearHistory = useCallback(() => setHistory([]), []);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 pb-20 animate-in fade-in duration-700">
-      {/* HEADER: OPERATIONAL CONTEXT */}
-      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b border-slate-100 pb-10">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-emerald-600">
-            <Zap size={14} fill="currentColor" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em]">
-              System Node:{" "}
-              {driverData?.driver_details?.vehicle_plate_number ||
-                "TRUCK_PENDING"}
-            </span>
-          </div>
-          <h1 className="text-5xl font-black text-slate-900 tracking-tighter uppercase italic">
-            Collection <span className="text-emerald-500">Log</span>
-          </h1>
-        </div>
-
-        <button
-          onClick={toggleDuty}
-          className={`px-10 py-5 rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] transition-all flex items-center gap-4 shadow-2xl ${
-            isRouting
-              ? "bg-slate-950 text-white shadow-emerald-200"
-              : "bg-emerald-600 text-white shadow-emerald-100"
-          }`}
-        >
-          {isRouting ? (
-            <>
-              <Navigation size={16} className="animate-pulse" /> Stop Routing
-            </>
-          ) : (
-            <>
-              <Play size={16} /> Start Collection Route
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* BIN GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {bins.map((bin) => (
-          <div
-            key={bin.id}
-            onClick={() => simulateCollection(bin)}
-            className={`group relative bg-white border border-slate-100 rounded-[3.5rem] p-10 transition-all duration-500 cursor-pointer overflow-hidden ${
-              isRouting
-                ? "hover:border-emerald-500 hover:shadow-2xl hover:-translate-y-2"
-                : "opacity-50 grayscale cursor-not-allowed"
-            }`}
-          >
-            {/* Liquid Fill Visual */}
-            <div
-              className="absolute bottom-0 left-0 right-0 bg-emerald-500/5 transition-all duration-1000 ease-in-out"
-              style={{ height: `${bin.fill_level}%` }}
-            />
-
-            <div className="relative z-10 space-y-6">
-              <div className="flex justify-between items-start">
-                <div
-                  className={`w-14 h-14 rounded-3xl flex items-center justify-center transition-colors ${
-                    bin.fill_level > 80
-                      ? "bg-red-50 text-red-600"
-                      : "bg-slate-50 text-emerald-600"
-                  }`}
-                >
-                  <Wifi size={24} />
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
-                    {bin.device_id}
-                  </p>
-                  <p className="text-xs font-black text-slate-900">
-                    {bin.fill_level}% FULL
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-black text-slate-950 uppercase italic tracking-tighter">
-                  {bin.name}
-                </h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                  IoT Node Connected
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-slate-50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Database size={12} className="text-emerald-500" />
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
-                    Live Feed
-                  </span>
-                </div>
-                {bin.fill_level === 0 && (
-                  <CheckCircle2 size={16} className="text-emerald-500" />
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {isSyncing && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-full flex items-center gap-4 shadow-2xl animate-bounce">
-          <RefreshCcw size={16} className="animate-spin text-emerald-500" />
-          <span className="text-[10px] font-black uppercase tracking-widest">
-            Pushing Collection Data to Registry...
-          </span>
-        </div>
-      )}
+    <div className="flex flex-col md:flex-row h-screen w-full bg-slate-950 overflow-hidden relative">
+      <NavigationControls isNavMode={isTracking} setIsNavMode={toggleTracking} heading={heading}/>
+      <DriverMapDisplay
+        bins={routingBins}
+        allBins={dbBins}
+        driverPos={driverPos}
+        heading={heading}
+        selectedBinId={selectedBinId}
+        setSelectedBinId={setSelectedBinId}
+        routeKey={routeKey}
+        mode={routingMode}
+        maxDetour={hasActiveRoute ? 99999 : maxDetour}
+        useFence={hasActiveRoute ? false : useFence}
+        mapStyle={MAP_STYLE}
+        onRouteUpdate={setEta}
+        isTracking={isTracking}
+        onToggleTracking={toggleTracking}
+        onOpenDashboard={() => setIsDashboardVisible(true)}
+        // Bypass props
+        isBypassMode={isBypassMode}
+        isRecording={isRecording}
+        recordedPath={recordedPath}
+      />
+      <DriverSidebar
+        bins={dbBins}
+        eta={eta}
+        history={history}
+        isTracking={isTracking}
+        onClearHistory={clearHistory}
+        onStartTracking={toggleTracking}
+        onStopTracking={toggleTracking}
+        onRefresh={() => setRouteKey(k => k + 1)}
+        routingMode={routingMode}
+        setRoutingMode={setRoutingMode}
+        maxDetour={maxDetour}
+        setMaxDetour={setMaxDetour}
+        useFence={useFence}
+        setUseFence={setUseFence}
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
+        isDashboardVisible={isDashboardVisible}
+        setIsDashboardVisible={setIsDashboardVisible}
+        onAddToHistory={addToHistory}
+      />
     </div>
   );
 }

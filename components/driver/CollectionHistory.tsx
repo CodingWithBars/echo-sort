@@ -381,6 +381,12 @@ function ActiveRouteView({
   onComplete,
   onCancel,
   saving,
+  // Bypass additions
+  isBypassMode,
+  setIsBypassMode,
+  isRecording,
+  setIsRecording,
+  recordedPath,
 }: {
   order: TravelOrder;
   driverProfile: DriverProfile;
@@ -390,6 +396,12 @@ function ActiveRouteView({
   onComplete: () => void;
   onCancel: () => void;
   saving: boolean;
+  // Bypass additions
+  isBypassMode: boolean;
+  setIsBypassMode: (v: boolean) => void;
+  isRecording: boolean;
+  setIsRecording: (v: boolean) => void;
+  recordedPath: [number, number][];
 }) {
   const collected    = bins.filter(b => b.collected).length;
   const total        = bins.length;
@@ -413,13 +425,45 @@ function ActiveRouteView({
                 {order.scheduled_time && <span className="flex items-center gap-1"><Clock size={10} />{fmtTime(order.scheduled_time)}</span>}
               </div>
             </div>
-            <button
-              onClick={onCancel}
-              className="flex-shrink-0 px-4 py-2.5 rounded-2xl bg-white/20 text-white text-[10px] font-black uppercase tracking-widest hover:bg-white/30 transition-all"
-            >
-              <Square size={12} className="inline mr-1.5" fill="currentColor" />Cancel
-            </button>
+            <div className="flex flex-col gap-2 items-end">
+              <button
+                onClick={onCancel}
+                className="flex-shrink-0 px-4 py-2.5 rounded-2xl bg-white/20 text-white text-[10px] font-black uppercase tracking-widest hover:bg-white/30 transition-all"
+              >
+                <Square size={12} className="inline mr-1.5" fill="currentColor" />Cancel
+              </button>
+              
+              <button
+                onClick={() => setIsBypassMode(!isBypassMode)}
+                className={`flex-shrink-0 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  isBypassMode ? "bg-amber-500 text-white shadow-lg shadow-amber-900/20" : "bg-white/10 text-white/60 hover:bg-white/20"
+                }`}
+              >
+                <Route size={12} className="inline mr-1.5" /> {isBypassMode ? "Bypass Active" : "Bypass Mode"}
+              </button>
+            </div>
           </div>
+
+          {/* Bypass recording status */}
+          {isBypassMode && (
+            <div className="mb-6 p-4 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${isRecording ? "bg-red-500 animate-pulse" : "bg-slate-400"}`} />
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest">Manual Path Recording</p>
+                  <p className="text-[9px] opacity-60 font-bold">{recordedPath.length} waypoints captured</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsRecording(!isRecording)}
+                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                  isRecording ? "bg-red-500 text-white" : "bg-white text-emerald-700"
+                }`}
+              >
+                {isRecording ? "Stop REC" : "Start REC"}
+              </button>
+            </div>
+          )}
 
           {/* Progress bar */}
           <div className="space-y-2">
@@ -587,12 +631,22 @@ export interface ActiveRouteState {
   activeBins:   BinManifest[];
   tripSummary:  TripSummary | null;
   isRouting:    boolean;
+  // Bypass additions
+  isBypassMode: boolean;
+  isRecording:  boolean;
+  recordedPath: [number, number][];
+  lastBinId:    string | null;
 }
 export interface ActiveRouteSetters {
   setActiveOrder:  React.Dispatch<React.SetStateAction<TravelOrder | null>>;
   setActiveBins:   React.Dispatch<React.SetStateAction<BinManifest[]>>;
   setTripSummary:  React.Dispatch<React.SetStateAction<TripSummary | null>>;
   setIsRouting:    React.Dispatch<React.SetStateAction<boolean>>;
+  // Bypass additions
+  setIsBypassMode: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsRecording:  React.Dispatch<React.SetStateAction<boolean>>;
+  setRecordedPath: React.Dispatch<React.SetStateAction<[number, number][]>>;
+  setLastBinId:    React.Dispatch<React.SetStateAction<string | null>>;
 }
 interface CollectionHistoryProps extends ActiveRouteState, ActiveRouteSetters {
   onRouteStarted?: (bins: BinManifest[], order: TravelOrder) => void;
@@ -601,6 +655,8 @@ interface CollectionHistoryProps extends ActiveRouteState, ActiveRouteSetters {
 export default function CollectionHistory({
   activeOrder, activeBins, tripSummary, isRouting,
   setActiveOrder, setActiveBins, setTripSummary, setIsRouting,
+  isBypassMode, setIsBypassMode, isRecording, setIsRecording,
+  recordedPath, setRecordedPath, lastBinId, setLastBinId,
   onRouteStarted,
 }: CollectionHistoryProps) {
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
@@ -766,6 +822,58 @@ export default function CollectionHistory({
       prev.map(b => b.id === binId ? { ...b, collected: true, fill_level: 0, collected_at: collectedAt } : b)
     );
 
+    // ── BYPASS RECORDING LOGIC ──
+    if (isBypassMode && recordedPath.length > 2 && lastBinId) {
+      try {
+        // Calculate basic metrics
+        const distM = recordedPath.reduce((acc, curr, i) => {
+          if (i === 0) return 0;
+          const prev = recordedPath[i-1];
+          // Simple haversine approximation for distance
+          const R = 6371e3;
+          const φ1 = prev[0] * Math.PI/180;
+          const φ2 = curr[0] * Math.PI/180;
+          const Δφ = (curr[0]-prev[0]) * Math.PI/180;
+          const Δλ = (curr[1]-prev[1]) * Math.PI/180;
+          const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          return acc + (R * c);
+        }, 0);
+
+        // Save bypass route to DB
+        await supabase.from("bypass_routes").insert({
+          original_schedule_id: activeOrder?.id,
+          from_bin_id:          Number(lastBinId),
+          to_bin_id:            Number(binId),
+          driver_id:            driverProfile.id,
+          waypoints:            { points: recordedPath },
+          route_geojson:        {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: recordedPath.map(p => [p[1], p[0]])
+            },
+            properties: {}
+          },
+          distance_m:           Math.round(distM),
+          duration_s:           0, // Could be calculated if timestamps were tracked
+          vehicle_type:         driverProfile.driver_details.vehicle_type
+        });
+
+        console.log(`Bypass route saved: Bin ${lastBinId} -> Bin ${binId}`);
+      } catch (err) {
+        console.error("Error saving bypass route:", err);
+      }
+    }
+
+    // Reset recording for next segment
+    if (isBypassMode) {
+      setLastBinId(binId);
+      setRecordedPath([]);
+    }
+
     setTripSummary(prev => prev ? {
       ...prev,
       bins_collected:       prev.bins_collected + 1,
@@ -848,6 +956,12 @@ export default function CollectionHistory({
           onComplete={handleComplete}
           onCancel={() => { setActiveOrder(null); setActiveBins([]); setTripSummary(null); setIsRouting(false); }}
           saving={isSyncing}
+          // Bypass props
+          isBypassMode={isBypassMode}
+          setIsBypassMode={setIsBypassMode}
+          isRecording={isRecording}
+          setIsRecording={setIsRecording}
+          recordedPath={recordedPath}
         />
         {isSyncing && (
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-full flex items-center gap-3 shadow-2xl z-50 animate-in slide-in-from-bottom-4">
