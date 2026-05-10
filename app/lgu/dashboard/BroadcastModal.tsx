@@ -28,16 +28,31 @@ export default function BroadcastModal({profile,citizenCount,onClose,onSent}:{pr
     }).select("id").single();
     if (error || !bc) { setSaving(false); return; }
 
-    const { data: cDetails } = await supabase.from("citizen_details").select("id").eq("barangay", profile.barangay).eq("municipality", profile.municipality);
-    if (cDetails && cDetails.length > 0) {
-      const notifs = cDetails.map((c:any) => ({
-        user_id: c.id, type: "BROADCAST", title: subject.trim(),
+    const [cRes, lRes, dRes, saRes] = await Promise.all([
+      supabase.from("citizen_details").select("id").eq("barangay", profile.barangay).eq("municipality", profile.municipality),
+      supabase.from("lgu_details").select("id").eq("barangay", profile.barangay).eq("municipality", profile.municipality),
+      supabase.from("collection_schedules").select("driver_id").eq("barangay", profile.barangay).eq("municipality", profile.municipality),
+      supabase.from("profiles").select("id").eq("role", "SUPER_ADMIN")
+    ]);
+
+    const targetIds = new Set([
+      ...(cRes.data ?? []).map((u: any) => u.id),
+      ...(lRes.data ?? []).map((u: any) => u.id),
+      ...(dRes.data ?? []).map((u: any) => u.driver_id).filter(Boolean),
+      ...(saRes.data ?? []).map((u: any) => u.id)
+    ]);
+    targetIds.delete(profile.id); // Don't notify self
+
+    if (targetIds.size > 0) {
+      const notifs = Array.from(targetIds).map(uid => ({
+        user_id: uid, type: "BROADCAST", title: subject.trim(),
         body: body.trim(), created_by: profile.id,
         metadata: { broadcast_id: bc.id, broadcast_type: type, barangay: profile.barangay },
       }));
       await supabase.from("notifications").insert(notifs);
     }
-    await supabase.from("audit_logs").insert({admin_id:profile.id,action_type:"LGU_BROADCAST",target_id:bc.id,reason:`Broadcast "${subject}" sent to Barangay ${profile.barangay} (${cDetails?.length??0} citizens)`});
+
+    await supabase.from("audit_logs").insert({admin_id:profile.id,action_type:"LGU_BROADCAST",target_id:bc.id,reason:`Broadcast "${subject}" sent to Barangay ${profile.barangay} (${targetIds.size} recipients)`});
     setSaving(false); setSuccess(true); onSent();
     setTimeout(onClose, 1200);
   };

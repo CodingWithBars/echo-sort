@@ -258,15 +258,7 @@ function AdminProfilePanel({userId,profile,onClose,onRefresh}:AdminProfilePanelP
 }
 
 // ── NOTIFICATIONS PANEL ───────────────────────────────────────────────────────
-function NotificationsPanel({ userId, onClose }: { userId: string; onClose: () => void }) {
-  const [notifs, setNotifs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.from("notifications").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(20)
-      .then((res: any) => { setNotifs(res.data || []); setLoading(false); });
-  }, [userId]);
-
+function NotificationsPanel({ userId, notifs, onRead, onClose }: { userId: string; notifs: any[]; onRead: (id: string) => void; onClose: () => void }) {
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", backdropFilter: "blur(4px)", zIndex: 2002 }} />
@@ -281,26 +273,33 @@ function NotificationsPanel({ userId, onClose }: { userId: string; onClose: () =
         overflow: "hidden"
       }}>
         <div style={{ padding: "24px", borderBottom: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: THEME.text }}>Notifications</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: THEME.text }}>Notifications</span>
+            {notifs.filter(n=>!n.is_read).length > 0 && (
+              <span style={{ fontSize: 10, fontWeight: 800, background: "#ef4444", color: "#fff", padding: "2px 8px", borderRadius: 10 }}>
+                {notifs.filter(n=>!n.is_read).length}
+              </span>
+            )}
+          </div>
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 10, border: `1px solid ${THEME.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <X size={14} color={THEME.text} />
           </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
-          {loading ? <div style={{ padding: 40, textAlign: "center", color: THEME.textMuted }}>Loading alerts…</div>
-            : notifs.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: THEME.textMuted }}>No new notifications.</div>
-              : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {notifs.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: THEME.textMuted }}>No new notifications.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {notifs.map(n => (
-                  <div key={n.id} style={{ padding: "16px", borderRadius: 16, background: n.read ? "#fff" : THEME.accent, border: `1px solid ${THEME.border}` }}>
+                  <div key={n.id} onClick={() => !n.is_read && onRead(n.id)} style={{ padding: "16px", borderRadius: 16, background: n.is_read ? "#fff" : THEME.accent, border: `1px solid ${THEME.border}`, cursor: n.is_read ? "default" : "pointer" }}>
                     <div style={{ display: "flex", gap: 12 }}>
                       <div style={{ width: 36, height: 36, borderRadius: 12, background: THEME.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         <Bell size={18} color="#fff" />
                       </div>
-                      <div>
+                      <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: THEME.text, marginBottom: 4 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: THEME.textMuted, lineHeight: 1.4 }}>{n.message}</div>
+                        <div style={{ fontSize: 12, color: THEME.textMuted, lineHeight: 1.4 }}>{n.body}</div>
                         <div style={{ fontSize: 10, color: THEME.textMuted, marginTop: 8 }}>{new Date(n.created_at).toLocaleString()}</div>
                       </div>
+                      {!n.is_read && <div style={{ width: 8, height: 8, background: "#ef4444", borderRadius: "50%", marginTop: 4 }} />}
                     </div>
                   </div>
                 ))}
@@ -324,6 +323,7 @@ export default function AdminDashboard() {
   const [showNotifications,  setShowNotifications] = useState(false);
   const [adminProfile,       setAdminProfile]      = useState<{id:string;full_name:string;role:string;avatar_url?:string|null}|null>(null);
   const [loading,            setLoading]           = useState(true);
+  const [notifs,             setNotifs]            = useState<any[]>([]);
   const [deferredPrompt,     setDeferredPrompt]    = useState<any>(null);
   const [isInstallable,      setIsInstallable]     = useState(false);
 
@@ -351,11 +351,30 @@ export default function AdminDashboard() {
     const {data:{user}} = await supabase.auth.getUser();
     if(!user){router.replace("/login");return;}
     const {data:p} = await supabase.from("profiles").select("id,full_name,role,avatar_url").eq("id",user.id).single();
-    if(p) setAdminProfile(p);
+    if(p) {
+      setAdminProfile(p);
+      const {data:nd} = await supabase.from("notifications").select("*").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
+      setNotifs(nd ?? []);
+    }
     setLoading(false);
   },[router]);
 
   useEffect(()=>{fetchAdminProfile();},[fetchAdminProfile]);
+
+  useEffect(() => {
+    if (!adminProfile?.id) return;
+    const channel = supabase.channel(`admin-notifs-${adminProfile.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${adminProfile.id}` }, (payload: any) => {
+        setNotifs(prev => [payload.new, ...prev].slice(0, 20));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [adminProfile?.id]);
+
+  const markRead = async (id: string) => {
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+  };
   
   const initials = adminProfile?.full_name?.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase() ?? "A";
 
@@ -394,6 +413,7 @@ export default function AdminDashboard() {
   };
 
   const currentLabel=menuItems.find(i=>i.id===activeTab)?.label??"Dashboard";
+  const unreadCount = notifs.filter(n => !n.is_read).length;
 
   return (
     <div className="flex h-screen w-full relative overflow-hidden" style={{background:THEME.bg,color:THEME.text,fontFamily:"sans-serif"}}>
@@ -490,7 +510,11 @@ export default function AdminDashboard() {
               style={{width:44,height:44,borderRadius:14,border:`1px solid ${THEME.border}`,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative"}}
             >
               <Bell size={20} color={THEME.text}/>
-              <div style={{position:"absolute",top:12,right:12,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid #fff"}}/>
+              {unreadCount > 0 && (
+                <span style={{position:"absolute",top:-4,right:-4,minWidth:18,height:18,background:"#ef4444",borderRadius:9,border:"2px solid #fff",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
 
             <div style={{width:1,height:32,background:THEME.border,margin:"0 4px"}}/>
@@ -536,6 +560,8 @@ export default function AdminDashboard() {
       {showNotifications && adminProfile && (
         <NotificationsPanel
           userId={adminProfile.id}
+          notifs={notifs}
+          onRead={markRead}
           onClose={() => setShowNotifications(false)}
         />
       )}

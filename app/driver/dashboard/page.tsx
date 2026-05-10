@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import dynamic from "next/dynamic";
-import { X, ShieldCheck } from "lucide-react";
+import { X, ShieldCheck, Bell } from "lucide-react";
 import CollectionHistory, {
   type ActiveRouteState,
   type ActiveRouteSetters,
@@ -301,6 +301,43 @@ function DriverProfilePanel({driverData,onClose,onRefresh}:DriverProfilePanelPro
   );
 }
 
+// ── NOTIFICATION PANEL ─────────────────────────────────────────────────────────
+function NotifPanel({notifs,onRead,onClose}:{notifs:any[];onRead:(id:string)=>void;onClose:()=>void}) {
+  const unread=notifs.filter(n=>!n.is_read).length;
+  return (
+    <div style={{
+      position:"absolute",top:"calc(100% + 12px)",right:0,width:320,
+      background:"#fff",borderRadius:24,border:`1px solid #e2e8f0`,
+      boxShadow:"0 20px 50px rgba(0,0,0,0.1)",zIndex:1100,overflow:"hidden",
+      animation:"slideInUp .2s ease-out",fontFamily:"sans-serif"
+    }}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",background:"#f0fdf4",borderBottom:"1px solid #e2e8f0"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:EM[900],textTransform:"uppercase"}}>Notifications</span>
+          {unread>0&&<span style={{fontSize:10,fontWeight:800,background:"#ef4444",color:"#fff",padding:"2px 8px",borderRadius:10}}>{unread}</span>}
+        </div>
+        <button onClick={onClose} style={{width:28,height:28,borderRadius:8,background:"#fff",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><X size={12}/></button>
+      </div>
+      <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-50">
+        {notifs.length===0?(
+          <div className="py-10 text-center text-slate-400 text-sm font-medium italic">No alerts yet</div>
+        ):notifs.map(n=>(
+          <div key={n.id} onClick={()=>onRead(n.id)} className={`flex gap-3 items-start p-4 cursor-pointer transition-colors hover:bg-slate-50 ${!n.is_read?"bg-emerald-50/50":""}`}>
+            <div className={`w-8 h-8 rounded-2xl flex items-center justify-center flex-shrink-0 ${n.is_read?"bg-slate-100":"bg-emerald-100"}`}>
+              {n.type==="BROADCAST"?<span className="text-sm">📢</span>:<span className="text-sm">🔔</span>}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm leading-snug ${n.is_read?"font-medium text-slate-700":"font-black text-slate-900"}`}>{n.title}</p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
+            </div>
+            {!n.is_read&&<div className="w-2 h-2 rounded-full bg-emerald-600 flex-shrink-0 mt-1.5"/>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 export default function DriverDashboard() {
   const router = useRouter();
@@ -311,13 +348,16 @@ export default function DriverDashboard() {
   const [showProfile,     setShowProfile]     = useState(false);
   const [driverData,      setDriverData]      = useState<any>(null);
   const [isLoading,       setIsLoading]       = useState(true);
+  const [notifs,          setNotifs]          = useState<any[]>([]);
+  const [notifOpen,       setNotifOpen]       = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   // ── Lifted active-route state ────────────────────────────────────────────
-  // Lives here so it persists when driver switches between map / history tabs.
   const [activeOrder,   setActiveOrder]   = useState<TravelOrder | null>(null);
   const [activeBins,    setActiveBins]    = useState<BinManifest[]>([]);
   const [tripSummary,   setTripSummary]   = useState<any>(null);
   const [isRouting,     setIsRouting]     = useState(false);
+
   // Bins formatted for RoutingLayerGL (needs fillLevel not fill_level)
   const routeBins = activeBins.map(b => ({
     id:          b.id,
@@ -339,6 +379,8 @@ export default function DriverDashboard() {
         if(error) throw error;
         if(data.driver_details.employment_status!=="ACTIVE"){await supabase.auth.signOut();router.push("/login");return;}
         setDriverData(data);
+        const {data:nd}=await supabase.from("notifications").select("*").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20);
+        setNotifs(nd??[]);
       }catch(err){console.error("Dashboard Error:",err);}
       finally{setIsLoading(false);}
     })();
@@ -346,14 +388,21 @@ export default function DriverDashboard() {
 
   useEffect(()=>{
     if(!driverData?.id) return;
-    const ch = supabase.channel(`driver-status-${driverData.id}`)
+    const ch = supabase.channel(`driver-updates-${driverData.id}`)
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"driver_details",filter:`id=eq.${driverData.id}`},
         (payload:RealtimePostgresUpdatePayload<DriverDetails>)=>{
           setDriverData((prev:any)=>({...prev,driver_details:{...prev.driver_details,duty_status:payload.new.duty_status}}));
         })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications",filter:`user_id=eq.${driverData.id}`},
+        (payload: any)=>{setNotifs(prev=>[payload.new,...prev].slice(0,20));})
       .subscribe();
     return ()=>supabase.removeChannel(ch);
   },[driverData?.id]);
+
+  const markRead = async (id:string) => {
+    setNotifs(prev=>prev.map(n=>n.id===id?{...n,is_read:true}:n));
+    await supabase.from("notifications").update({is_read:true}).eq("id",id);
+  };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -380,7 +429,6 @@ export default function DriverDashboard() {
   };
 
   const handleRouteStarted = (_bins: BinManifest[], _order: TravelOrder) => {
-    // Switch to map so the driver sees the route immediately
     setActiveTab("map");
   };
 
@@ -425,6 +473,7 @@ export default function DriverDashboard() {
 
   const currentLabel=menuItems.find(i=>i.id===activeTab)?.label??"Driver Portal";
   const isOnDuty=driverData?.driver_details?.duty_status==="ON-DUTY";
+  const unreadCount = notifs.filter(n=>!n.is_read).length;
 
   if(isLoading) return (
     <div className="h-screen w-full flex items-center justify-center bg-white">
@@ -447,7 +496,7 @@ export default function DriverDashboard() {
         <div className="p-8 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] shadow-xl shadow-emerald-100 border border-emerald-50 overflow-hidden flex-shrink-0">
-              <img src="/icons/eco-route.png" alt="EcoRoute Logo" className="h-full w-full object-cover p-3"/>
+              <img src="/icons/icon-512x512.png" alt="EcoRoute Logo" className="h-full w-full object-cover p-3"/>
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">EcoRoute</h1>
@@ -489,29 +538,49 @@ export default function DriverDashboard() {
             </div>
           </div>
 
-          {/* Profile badge — opens slide-over at top:80px */}
-          <button
-            onClick={()=>setShowProfile(true)}
-            className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${showProfile?"bg-slate-900 border-slate-800":"bg-slate-50 border-slate-100 hover:bg-white hover:border-slate-200"}`}
-          >
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-100 overflow-hidden border-2 border-white">
-                {driverData?.avatar_url
-                  ?<img src={driverData.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
-                  :<span className="italic">{driverData?.full_name?.charAt(0)??"D"}</span>
-                }
-              </div>
-              <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full transition-colors duration-500 ${isOnDuty?"bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]":"bg-slate-400"}`}/>
+          <div className="flex items-center gap-6">
+            {/* Notification bell */}
+            <div ref={notifRef} className="relative">
+              <button 
+                onClick={()=>setNotifOpen(!notifOpen)}
+                className={`w-11 h-11 rounded-2xl border transition-all flex items-center justify-center relative ${notifOpen?"bg-emerald-50 border-emerald-200":"bg-white border-slate-100 hover:bg-slate-50"}`}
+              >
+                <Bell size={20} className={notifOpen?"text-emerald-600":"text-slate-600"}/>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white px-1">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <NotifPanel notifs={notifs} onRead={markRead} onClose={()=>setNotifOpen(false)} />
+              )}
             </div>
-            <div className="text-left hidden sm:block">
-              <p className={`text-[10px] font-black leading-none uppercase tracking-tighter italic ${showProfile?"text-white":"text-slate-900"}`}>{driverData?.full_name}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">{driverData?.driver_details?.vehicle_plate_number??"NO TRUCK"}</p>
-                <div className="w-1 h-1 rounded-full bg-slate-200"/>
-                <p className="text-[8px] text-emerald-600 font-black uppercase tracking-wider">{driverData?.driver_details?.assigned_route??"NO ROUTE"}</p>
+
+            {/* Profile badge — opens slide-over at top:80px */}
+            <button
+              onClick={()=>setShowProfile(true)}
+              className={`flex items-center gap-3 p-1 pr-4 rounded-full border transition-all ${showProfile?"bg-slate-900 border-slate-800":"bg-slate-50 border-slate-100 hover:bg-white hover:border-slate-200"}`}
+            >
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-100 overflow-hidden border-2 border-white">
+                  {driverData?.avatar_url
+                    ?<img src={driverData.avatar_url} alt="Profile" className="w-full h-full object-cover"/>
+                    :<span className="italic">{driverData?.full_name?.charAt(0)??"D"}</span>
+                  }
+                </div>
+                <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full transition-colors duration-500 ${isOnDuty?"bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]":"bg-slate-400"}`}/>
               </div>
-            </div>
-          </button>
+              <div className="text-left hidden sm:block">
+                <p className={`text-[10px] font-black leading-none uppercase tracking-tighter italic ${showProfile?"text-white":"text-slate-900"}`}>{driverData?.full_name}</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">{driverData?.driver_details?.vehicle_plate_number??"NO TRUCK"}</p>
+                  <div className="w-1 h-1 rounded-full bg-slate-200"/>
+                  <p className="text-[8px] text-emerald-600 font-black uppercase tracking-wider">{driverData?.driver_details?.assigned_route??"NO ROUTE"}</p>
+                </div>
+              </div>
+            </button>
+          </div>
         </header>
 
         <div className={`flex-1 relative w-full h-full ${activeTab==="map"?"overflow-hidden":"overflow-y-auto p-6 lg:p-10"}`}>
